@@ -45,7 +45,7 @@ function verifyAuth(req, auth, name) {
     case 'header': {
       const headerName = auth.header || 'authorization';
       const value = req.get(headerName) || '';
-      const expected = auth.secret;
+      const expected = auth.prefix ? `${auth.prefix}${auth.secret}` : auth.secret;
       return value === expected;
     }
     case 'microsoft': {
@@ -140,7 +140,8 @@ router.all('/:name', async (req, res) => {
     return res.status(404).json({ error: 'Webhook not configured' });
   }
 
-  if (req.method === 'GET' && req.query.validationToken) {
+  if (req?.query && typeof req.query.validationToken === 'string') {
+    res.set('Content-Type', 'text/plain');
     return res.status(200).send(req.query.validationToken);
   }
 
