@@ -45,7 +45,7 @@ function verifyAuth(req, auth, name) {
     case 'header': {
       const headerName = auth.header || 'authorization';
       const value = req.get(headerName) || '';
-      const expected = auth.prefix ? `${auth.prefix}${auth.secret}` : auth.secret;
+      const expected = auth.secret;
       return value === expected;
     }
     case 'microsoft': {
@@ -63,9 +63,6 @@ function resolveEnvValue(value, name, keyPath) {
     return value;
   }
   const resolved = extractEnvVariable(value);
-  if (envVarRegex.test(value) && resolved === value) {
-    logger.warn(`[webhook:${name}] Unresolved env var at ${keyPath}: ${value}`);
-  }
   return resolved;
 }
 
@@ -90,7 +87,7 @@ function resolveConfigDeep(input, name, basePath = 'webhooks') {
 async function processWebhook({ req, webhookConfig, name, userId, payload }) {
   try {
     logger.info(`[webhook:${name}] Processing webhook for user ${userId} (${webhookConfig.user})`);
-    const prefix = webhookConfig.prompt ? `${webhookConfig.prompt}\n\n` : '';
+    const prefix = `${webhookConfig.prompt}\n\n`;
     const text = `${prefix}\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``;
 
     // Reuse the original Express request so req.app.locals and other properties are available
@@ -149,18 +146,14 @@ router.all('/:name', async (req, res) => {
 
   // Resolve env vars across the entire webhook config (deep)
   webhookConfig = resolveConfigDeep(webhookConfig, name, `webhooks.${name}`);
-  logger.info(`[webhook:${name}] Resolved webhook config: ${JSON.stringify(webhookConfig)}`);
   if (!verifyAuth(req, webhookConfig.auth, name)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  let userId = 'system';
-  if (webhookConfig.user) {
-    const user = await findUser({ email: webhookConfig.user });
-    // If your deployment uses email as the user identifier, the lookup above will simply return the same value
-    userId = user?._id?.toString() || webhookConfig.user;
-  }
-
+  const user = await findUser({ email: webhookConfig.user });
+  // If your deployment uses email as the user identifier, the lookup above will simply return the same value
+  const userId = user?._id?.toString() || webhookConfig.user;
+  
   logger.info(`[webhook:${name}] Queueing webhook to process for user ${userId} (${webhookConfig.user})`);
   const payload = req.body;
   res.status(202).json({ ok: true });
