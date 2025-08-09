@@ -6,7 +6,7 @@ const { setCachedTools, getCachedTools, loadCustomConfig } = require('~/server/s
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
-
+const { getServerConnectionStatus, getMCPSetupData } = require('~/server/services/MCP');
 
 const reinitializeMCP = async (serverName, userId) => {
   try {
@@ -220,6 +220,23 @@ async function initializeUserMCPs(app) {
       // Iterate users sequentially to avoid thundering herd on providers
       for (const userId of targetUserIds) {
         try {
+          const { appConnections, userConnections, oauthServers } = await getMCPSetupData(
+            userId,
+          );
+          // first, check if server is disconnected. if not, no need to reinitialize
+          const serverStatus = await getServerConnectionStatus(
+            userId,
+            serverName,
+            appConnections,
+            userConnections,
+            oauthServers,
+          );
+          // disconnected, error, connecting, connected, etc.
+          // we want to reinitialize if it's disconnected
+          if (serverStatus.connectionState !== 'disconnected') {
+            logger.info(`[MCP][Startup] Server '${serverName}' has already been initialized for user ${userId}`);
+            continue;
+          }
           const result = await reinitializeMCP(serverName, userId);
           if (result.status === 200) {
             if (result.content.oauthRequired) {
