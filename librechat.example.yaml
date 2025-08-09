@@ -137,6 +137,26 @@ actions:
     - "librechat.ai"
     - "google.com"
 
+# Example Webhooks configuration
+webhooks:
+  email_received:
+    agent_id: 'agent-email'
+    user: 'admin@example.com' # user's email; if your ID is the same as email, reuse it here
+    prompt: |-
+      A new email has arrived. Summarize it and note any required actions.
+    auth:
+      type: microsoft
+      clientState: '${MS_CLIENT_STATE}'
+  github_issue:
+    agent_id: 'agent-github'
+    user: 'admin@example.com'
+    prompt: |-
+      A new GitHub issue was opened. Review the issue and propose next steps.
+    auth:
+      type: github
+      secret: '${GITHUB_WEBHOOK_SECRET}'
+      algorithm: sha256
+
 # Example MCP Servers Object Structure
 # mcpServers:
 #   everything:
