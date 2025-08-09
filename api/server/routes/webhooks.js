@@ -189,18 +189,19 @@ router.all('/:server/:hook', async (req, res, next) => {
     if (response.status !== 200) {
       const upstreamContentType = response.headers.get('content-type') || 'text/plain';
       const upstreamText = await response.text().catch(() => '');
+      logger.info(`[mcp-webhook:${server}/${hook}] Received upstream response: ${response.status} ${upstreamText}`);
       res.set('Content-Type', upstreamContentType);
       return res.status(response.status).send(upstreamText);
     }
 
     const data = await response.json();
-    const parsed = webhookResponseSchema.safeParse(data);
+    logger.info(`[mcp-webhook:${server}/${hook}] Received response: ${response.status} ${JSON.stringify(data)}`);
 
     // Prepare planned response (send after queueing)
-    const responseCode = parsed.data.reqResponseCode;
-    const responseContentType = parsed.data.reqResponseContentType === 'json' ? 'application/json' : 'text/plain';
-    const responseContent = parsed.data.reqResponseContent;
-    const promptContent = parsed.data.promptContent;
+    const responseCode = data.reqResponseCode;
+    const responseContentType = data.reqResponseContentType === 'json' ? 'application/json' : 'text/plain';
+    const responseContent = data.reqResponseContent;
+    const promptContent = data.promptContent;
     // Enqueue prompt processing if present
     if (promptContent) {
       const user = await findUser({ email: hookConfig.user });
