@@ -93,8 +93,6 @@ async function processWebhook({ req, webhookConfig, name, userId, payload }) {
     dummyRes.on = () => {};
     dummyRes.removeListener = () => {};
 
-    logger.info(`[webhook:${name}] Processing webhook for user ${userId} (${webhookConfig.user})...`);
-
     await AgentController(agentReq, dummyRes, () => {}, initializeClient, addTitle);
     logger.info(`[webhook:${name}] Webhook processed for user ${userId} (${webhookConfig.user})`);
   } catch (error) {
