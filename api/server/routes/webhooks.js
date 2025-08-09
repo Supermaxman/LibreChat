@@ -14,7 +14,7 @@ const { Writable } = require('stream');
 const router = express.Router();
 const queue = new PQueue({ concurrency: 1 });
 
-function verifyAuth(req, auth) {
+function verifyAuth(req, auth, name) {
   if (!auth) {
     return true;
   }
@@ -47,7 +47,8 @@ function verifyAuth(req, auth) {
       return clientState === auth.clientState;
     }
     default:
-      return true;
+      logger.error(`[webhook:${name}] Invalid auth type: ${auth.type}`);
+      throw new Error('Invalid auth type');
   }
 }
 
@@ -56,23 +57,22 @@ async function processWebhook({ req, webhookConfig, name, userId, payload }) {
     const prefix = webhookConfig.prompt ? `${webhookConfig.prompt}\n\n` : '';
     const text = `${prefix}${JSON.stringify(payload)}`;
 
-    const agentReq = {
-      user: { id: userId },
-      headers: req.headers,
-      body: {
-        text,
+    // Reuse the original Express request so req.app.locals and other properties are available
+    const agentReq = req;
+    agentReq.user = { id: userId };
+    agentReq.body = {
+      text,
+      endpoint: EModelEndpoint.agents,
+      agent_id: webhookConfig.agent_id,
+      endpointOption: {
         endpoint: EModelEndpoint.agents,
         agent_id: webhookConfig.agent_id,
-        endpointOption: {
-          endpoint: EModelEndpoint.agents,
+        agent: loadAgent({
+          req: { user: { id: userId } },
           agent_id: webhookConfig.agent_id,
-          agent: loadAgent({
-            req: { user: { id: userId } },
-            agent_id: webhookConfig.agent_id,
-            endpoint: EModelEndpoint.agents,
-          }),
-          model_parameters: {},
-        },
+          endpoint: EModelEndpoint.agents,
+        }),
+        model_parameters: {},
       },
     };
 
@@ -108,7 +108,7 @@ router.all('/:name', async (req, res) => {
     return res.status(200).send(req.query.validationToken);
   }
 
-  if (!verifyAuth(req, webhookConfig.auth)) {
+  if (!verifyAuth(req, webhookConfig.auth, name)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
