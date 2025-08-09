@@ -17,11 +17,13 @@ const validateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const errorController = require('./controllers/ErrorController');
 const initializeMCPs = require('./services/initializeMCPs');
+const initializeUserMCPs = require('./services/initializeUserMCPs');
 const configureSocialLogins = require('./socialLogins');
 const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
@@ -155,6 +157,13 @@ const startServer = async () => {
     }
 
     initializeMCPs(app);
+    // After app-level MCPs, attempt user-scoped startup initialization
+    try {
+      initializeUserMCPs(app);
+    } catch (err) {
+      // Non-fatal
+      logger.error('Failed to initialize user-scoped MCPs', err);
+    }
   });
 };
 

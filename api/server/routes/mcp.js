@@ -300,27 +300,24 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
   }
 });
 
-/**
- * Reinitialize MCP server
- * This endpoint allows reinitializing a specific MCP server
- */
-router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
+
+export const reinitializeMCP = async (serverName, userId) => {
   try {
-    const { serverName } = req.params;
-    const user = req.user;
-
-    if (!user?.id) {
-      return res.status(401).json({ error: 'User not authenticated' });
-    }
-
+    const user = { id: userId };
     logger.info(`[MCP Reinitialize] Reinitializing server: ${serverName}`);
 
     const printConfig = false;
     const config = await loadCustomConfig(printConfig);
     if (!config || !config.mcpServers || !config.mcpServers[serverName]) {
-      return res.status(404).json({
-        error: `MCP server '${serverName}' not found in configuration`,
-      });
+      // return res.status(404).json({
+      //   error: `MCP server '${serverName}' not found in configuration`,
+      // });
+      return {
+        status: 404,
+        content: {
+          error: `MCP server '${serverName}' not found in configuration`,
+        }
+      }
     }
 
     const flowsCache = getLogStores(CacheKeys.FLOWS);
@@ -392,7 +389,13 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
           `[MCP Reinitialize] Error initializing MCP server ${serverName} for user:`,
           err,
         );
-        return res.status(500).json({ error: 'Failed to reinitialize MCP server for user' });
+        // return res.status(500).json({ error: 'Failed to reinitialize MCP server for user' });
+        return {
+          status: 500,
+          content: {
+            error: 'Failed to reinitialize MCP server for user',
+          }
+        }
       }
     }
 
@@ -436,17 +439,50 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
       return `Failed to reinitialize MCP server '${serverName}'`;
     };
 
-    res.json({
-      success: (userConnection && !oauthRequired) || (oauthRequired && oauthUrl),
-      message: getResponseMessage(),
-      serverName,
-      oauthRequired,
-      oauthUrl,
-    });
+    // res.json({
+    //   success: (userConnection && !oauthRequired) || (oauthRequired && oauthUrl),
+    //   message: getResponseMessage(),
+    //   serverName,
+    //   oauthRequired,
+    //   oauthUrl,
+    // });
+    return {
+      status: 200,
+      content: {
+        success: (userConnection && !oauthRequired) || (oauthRequired && oauthUrl),
+        message: getResponseMessage(),
+        serverName,
+        oauthRequired,
+        oauthUrl,
+      }
+    }
   } catch (error) {
     logger.error('[MCP Reinitialize] Unexpected error', error);
-    res.status(500).json({ error: 'Internal server error' });
+    // res.status(500).json({ error: 'Internal server error' });
+    return {
+      status: 500,
+      content: {
+        error: 'Internal server error',
+      }
+    }
   }
+}
+
+/**
+ * Reinitialize MCP server
+ * This endpoint allows reinitializing a specific MCP server
+ */
+router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
+
+  const { serverName } = req.params;
+  const user = req.user;
+
+  if (!user?.id) {
+    return res.status(401).json({ error: 'User not authenticated' });
+  }
+  const userId = user.id;
+  const result = await reinitializeMCP(serverName, userId);
+  return res.status(result.status).json(result.content);
 });
 
 /**
