@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const PQueue = require('p-queue').default;
 const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, Constants } = require('librechat-data-provider');
 const { getCustomConfig } = require('~/server/services/Config');
 const { loadAgent } = require('~/models/Agent');
 const { findUser } = require('~/models');
@@ -15,6 +15,7 @@ const router = express.Router();
 const queue = new PQueue({ concurrency: 1 });
 
 function verifyAuth(req, auth, name) {
+  logger.info(`[webhook:${name}] Verifying auth`);
   if (!auth) {
     return true;
   }
@@ -54,16 +55,19 @@ function verifyAuth(req, auth, name) {
 
 async function processWebhook({ req, webhookConfig, name, userId, payload }) {
   try {
+    logger.info(`[webhook:${name}] Processing webhook for user ${userId} (${webhookConfig.user})`);
     const prefix = webhookConfig.prompt ? `${webhookConfig.prompt}\n\n` : '';
-    const text = `${prefix}${JSON.stringify(payload)}`;
+    const text = `${prefix}\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``;
 
     // Reuse the original Express request so req.app.locals and other properties are available
     const agentReq = req;
     agentReq.user = { id: userId };
+    // TODO make sure the title model also works with the webhook
     agentReq.body = {
       text,
       endpoint: EModelEndpoint.agents,
       agent_id: webhookConfig.agent_id,
+      parentMessageId: Constants.NO_PARENT,
       endpointOption: {
         endpoint: EModelEndpoint.agents,
         agent_id: webhookConfig.agent_id,
@@ -89,7 +93,10 @@ async function processWebhook({ req, webhookConfig, name, userId, payload }) {
     dummyRes.on = () => {};
     dummyRes.removeListener = () => {};
 
+    logger.info(`[webhook:${name}] Processing webhook for user ${userId} (${webhookConfig.user})...`);
+
     await AgentController(agentReq, dummyRes, () => {}, initializeClient, addTitle);
+    logger.info(`[webhook:${name}] Webhook processed for user ${userId} (${webhookConfig.user})`);
   } catch (error) {
     logger.error(`[webhook:${name}] processing failed`, error);
   }
@@ -119,6 +126,7 @@ router.all('/:name', async (req, res) => {
     userId = user?._id?.toString() || webhookConfig.user;
   }
 
+  logger.info(`[webhook:${name}] Queueing webhook to process for user ${userId} (${webhookConfig.user})`);
   const payload = req.body;
   res.status(202).json({ ok: true });
 
