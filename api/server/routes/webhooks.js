@@ -1,6 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
-const PQueue = require('p-queue');
+const PQueue = require('p-queue').default;
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { getCustomConfig } = require('~/server/services/Config');
@@ -48,7 +48,7 @@ function verifyAuth(req, auth, name) {
     }
     default:
       logger.error(`[webhook:${name}] Invalid auth type: ${auth.type}`);
-      throw new Error('Invalid auth type');
+      return false;
   }
 }
 
