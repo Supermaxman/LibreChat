@@ -13,6 +13,7 @@ export * from './generate';
 export * from './models';
 /* mcp */
 export * from './mcp';
+export * from './webhooks';
 /* memory */
 export * from './memory';
 /* RBAC */
