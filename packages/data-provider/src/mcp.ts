@@ -2,6 +2,20 @@ import { z } from 'zod';
 import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
+/**
+ * MCP per-server webhook configuration
+ */
+const MCPWebhookConfigSchema = z.record(
+  z.object({
+    /** Email or user id to attribute the prompt run to */
+    user: z.string(),
+    /** Optional agent to route the prompt to */
+    agent_id: z.string().optional(),
+    /** Optional prefix prompt to prepend to runtime prompt content */
+    prompt: z.string().optional(),
+  }),
+);
+
 const BaseOptionsSchema = z.object({
   iconPath: z.string().optional(),
   timeout: z.number().optional(),
@@ -130,6 +144,8 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
         message: 'SSE URL must not start with ws:// or wss://',
       },
     ),
+  /** Optional webhooks for this MCP server (HTTP/S based) */
+  webhooks: MCPWebhookConfigSchema.optional(),
 });
 
 export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
@@ -148,6 +164,8 @@ export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
         message: 'Streamable HTTP URL must not start with ws:// or wss://',
       },
     ),
+  /** Optional webhooks for this MCP server (HTTP/S based) */
+  webhooks: MCPWebhookConfigSchema.optional(),
 });
 
 export const MCPOptionsSchema = z.union([

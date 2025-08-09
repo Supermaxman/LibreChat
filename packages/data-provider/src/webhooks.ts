@@ -25,9 +25,9 @@ export const webhookAuthSchema = z.discriminatedUnion('type', [
 ]);
 
 export const webhookSchema = z.object({
-  agent_id: z.string(),
+  agent_id: z.string().optional(),
   user: z.string(),
-  prompt: z.string(),
+  prompt: z.string().optional(),
   auth: webhookAuthSchema.optional(),
 });
 
@@ -36,3 +36,11 @@ export const WebhooksSchema = z.record(webhookSchema);
 export type TWebhookAuth = z.infer<typeof webhookAuthSchema>;
 export type TWebhookConfig = z.infer<typeof webhookSchema>;
 export type TWebhooksConfig = z.infer<typeof WebhooksSchema>;
+
+// Standardized WebhookResponse shape expected from proxied MCP webhook endpoints
+export type WebhookResponse = {
+  reqResponseCode: number;
+  reqResponseContent: string;
+  reqResponseContentType?: 'json' | 'text';
+  promptContent?: string;
+};
