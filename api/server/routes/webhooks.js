@@ -16,13 +16,6 @@ const addTitle = require('~/server/services/Endpoints/agents/title');
 const { Writable } = require('stream');
 const { z } = require('zod');
 
-const webhookResponseSchema = z.object({
-  reqResponseCode: z.number(),
-  reqResponseContent: z.string(),
-  reqResponseContentType: z.string().optional(),
-  promptContent: z.string().optional(),
-});
-
 
 const router = express.Router();
 const queue = new PQueue({ concurrency: 1 });
@@ -39,6 +32,7 @@ function resolveEnvValue(value, name, keyPath) {
 
 async function processMCPWebhook({ req, name, userId, hookConfig, promptContent }) {
   try {
+    logger.info(`[mcp-webhook:${name}] Starting prompt for user ${userId}`);
     const prefix = hookConfig.prompt ? `${hookConfig.prompt}\n\n` : '';
     const text = `${prefix}${promptContent ?? ''}`;
 
@@ -77,7 +71,7 @@ async function processMCPWebhook({ req, name, userId, hookConfig, promptContent 
     await AgentController(agentReq, dummyRes, () => {}, initializeClient, addTitle);
     logger.info(`[mcp-webhook:${name}] Processed prompt for user ${userId}`);
   } catch (error) {
-    logger.error(`[mcp-webhook:${name}] processing failed`, error);
+    logger.error(`[mcp-webhook:${name}] Processing failed`, error);
   }
 }
 
@@ -189,13 +183,13 @@ router.all('/:server/:hook', async (req, res, next) => {
     if (response.status !== 200) {
       const upstreamContentType = response.headers.get('content-type') || 'text/plain';
       const upstreamText = await response.text().catch(() => '');
-      logger.info(`[mcp-webhook:${server}/${hook}] Received upstream response: ${response.status} ${upstreamText}`);
+      logger.info(`[mcp-webhook:${server}/${hook}] Received non-200 upstream response: ${response.status}`);
       res.set('Content-Type', upstreamContentType);
       return res.status(response.status).send(upstreamText);
     }
 
     const data = await response.json();
-    logger.info(`[mcp-webhook:${server}/${hook}] Received response: ${response.status} ${JSON.stringify(data)}`);
+    logger.info(`[mcp-webhook:${server}/${hook}] Received 200 response: ${response.status}`);
 
     // Prepare planned response (send after queueing)
     const responseCode = data.reqResponseCode;
