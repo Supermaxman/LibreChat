@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const PQueue = require('p-queue').default;
 const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint, Constants } = require('librechat-data-provider');
+const { EModelEndpoint, Constants, extractEnvVariable } = require('librechat-data-provider');
 const { getCustomConfig } = require('~/server/services/Config');
 const { loadAgent } = require('~/models/Agent');
 const { findUser } = require('~/models');
@@ -113,22 +113,50 @@ router.all('/:name', async (req, res) => {
     return res.status(200).send(req.query.validationToken);
   }
 
-  if (!verifyAuth(req, webhookConfig.auth, name)) {
+  // Resolve env vars in webhook config fields
+  const resolvedAuth = webhookConfig.auth
+    ? (function resolveAuth(auth) {
+        switch (auth.type) {
+          case 'github':
+            return { ...auth, secret: extractEnvVariable(auth.secret) };
+          case 'header':
+            return {
+              ...auth,
+              secret: extractEnvVariable(auth.secret),
+              header: auth.header ? extractEnvVariable(auth.header) : auth.header,
+              prefix: auth.prefix ? extractEnvVariable(auth.prefix) : auth.prefix,
+            };
+          case 'microsoft':
+            return { ...auth, clientState: extractEnvVariable(auth.clientState) };
+          default:
+            return auth;
+        }
+      })(webhookConfig.auth)
+    : undefined;
+
+  const resolvedWebhookConfig = {
+    ...webhookConfig,
+    prompt: webhookConfig.prompt ? extractEnvVariable(webhookConfig.prompt) : webhookConfig.prompt,
+    user: webhookConfig.user ? extractEnvVariable(webhookConfig.user) : webhookConfig.user,
+    auth: resolvedAuth,
+  };
+
+  if (!verifyAuth(req, resolvedWebhookConfig.auth, name)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   let userId = 'system';
-  if (webhookConfig.user) {
-    const user = await findUser({ email: webhookConfig.user });
+  if (resolvedWebhookConfig.user) {
+    const user = await findUser({ email: resolvedWebhookConfig.user });
     // If your deployment uses email as the user identifier, the lookup above will simply return the same value
-    userId = user?._id?.toString() || webhookConfig.user;
+    userId = user?._id?.toString() || resolvedWebhookConfig.user;
   }
 
   logger.info(`[webhook:${name}] Queueing webhook to process for user ${userId} (${webhookConfig.user})`);
   const payload = req.body;
   res.status(202).json({ ok: true });
 
-  queue.add(() => processWebhook({ req, webhookConfig, name, userId, payload }));
+  queue.add(() => processWebhook({ req, webhookConfig: resolvedWebhookConfig, name, userId, payload }));
 });
 
 module.exports = router;
