@@ -96,7 +96,7 @@ function buildTargetWebhookUrl({ baseUrl, hook, query }) {
   return target.toString();
 }
 
-function prepareProxyHeaders(incomingHeaders, extraHeaders) {
+function prepareProxyHeaders(incomingHeaders, extraHeaders, server) {
   const out = { ...incomingHeaders };
   // override/merge with configured headers last
   Object.assign(out, extraHeaders || {});
@@ -105,6 +105,8 @@ function prepareProxyHeaders(incomingHeaders, extraHeaders) {
   delete out['content-length'];
   delete out['connection'];
   delete out['accept-encoding'];
+  // add MCP server name to headers
+  out['x-mcp-name'] = server;
   return out;
 }
 
@@ -149,7 +151,7 @@ router.all('/:server/:hook', async (req, res, next) => {
 
     // Build request init
     const method = req.method.toUpperCase();
-    const headers = prepareProxyHeaders(req.headers, serverConfig.headers);
+    const headers = prepareProxyHeaders(req.headers, serverConfig.headers, server);
 
     let body;
     if (method !== 'GET' && method !== 'HEAD') {
