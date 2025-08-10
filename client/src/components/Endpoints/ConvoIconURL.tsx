@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import React, { memo, useMemo } from 'react';
 import type { IconMapProps } from '~/common';
 import { URLIcon } from '~/components/Endpoints/URLIcon';
 import { icons } from '~/hooks/Endpoint/Icons';
@@ -15,7 +15,7 @@ interface ConvoIconURLProps {
 }
 
 const classMap = {
-  'menu-item': 'relative flex h-full items-center justify-center overflow-hidden rounded-full',
+  'menu-item': 'relative flex h-full items-center justify-center overflow-hidden rounded-full shrink-0',
   message: 'icon-md',
   default: 'icon-xl relative flex h-full overflow-hidden rounded-full',
 };
@@ -56,13 +56,17 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
     );
   }
 
+  const resolvedSize = context === 'menu-item' ? 20 : 41;
+  const containerClass = classMap[context ?? 'default'] ?? classMap.default;
+  const containerStyle = styleMap[context ?? 'default'] ?? styleMap.default;
+
   return (
-    <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
+    <div className={containerClass} style={containerStyle}>
       {Icon && (
         <Icon
-          size={41}
+          size={resolvedSize}
           context={context}
-          className="h-2/3 w-2/3"
+          className="h-full w-full"
           agentName={agentName}
           iconURL={endpointIconURL}
           assistantName={assistantName}

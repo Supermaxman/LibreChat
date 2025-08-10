@@ -185,6 +185,8 @@ export default function Conversation({
             endpointsConfig={endpointsConfig}
             assistantMap={assistantMap}
             agentsMap={agentsMap}
+            containerClassName="relative flex h-5 w-5 items-center justify-center overflow-hidden rounded-full"
+            className="h-full w-full"
             size={20}
             context="menu-item"
           />
