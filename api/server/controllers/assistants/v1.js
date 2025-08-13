@@ -327,6 +327,13 @@ const uploadAssistantAvatar = async (req, res) => {
     if (_metadata.avatar && _metadata.avatar_source) {
       const { deleteFile } = getStrategyFunctions(_metadata.avatar_source);
       try {
+        logger.info('[Assistants.avatar] Deleting previous assistant avatar', {
+          assistant_id,
+          userId: req?.user?.id,
+          avatar: _metadata.avatar,
+          route: req?.originalUrl ?? req?.url,
+        });
+        logger.debug(`[Assistants.avatar] Call stack:\n${new Error('Assistants.avatar delete stack').stack}`);
         await deleteFile(req, { filepath: _metadata.avatar });
         await deleteFileByFilter({ user: req.user.id, filepath: _metadata.avatar });
       } catch (error) {

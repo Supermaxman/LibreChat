@@ -108,7 +108,29 @@ function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileI
   } else {
     // Add directly to promises
     promises.push(
-      deleteFile(req, file)
+      (async () => {
+        try {
+          const requestMeta = {
+            userId: req?.user?.id,
+            method: req?.method,
+            route: req?.originalUrl ?? req?.url,
+            path: req?.path,
+            ip: req?.ip,
+          };
+          const fileMeta = {
+            file_id: file?.file_id,
+            filepath: file?.filepath,
+            source: file?.source,
+            context: file?.context,
+            model: file?.model,
+          };
+          logger.info('[process.delete] Deletion requested', { requestMeta, fileMeta });
+          logger.debug(`[process.delete] Call stack:\n${new Error('process.delete stack').stack}`);
+          return await deleteFile(req, file);
+        } catch (err) {
+          throw err;
+        }
+      })()
         .then(() => resolvedFileIds.push(file.file_id))
         .catch((err) => {
           logger.error('Error deleting file', err);

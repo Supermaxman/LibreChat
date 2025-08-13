@@ -135,6 +135,25 @@ async function deleteFileFromS3(req, file) {
   }
 
   try {
+    // Provide high-signal context and a stack for tracing deletion initiators
+    const requestMeta = {
+      userId: req?.user?.id,
+      method: req?.method,
+      route: req?.originalUrl ?? req?.url,
+      path: req?.path,
+      ip: req?.ip,
+      referer: req?.headers?.referer,
+    };
+    const fileMeta = {
+      key,
+      filepath: file?.filepath,
+      file_id: file?.file_id,
+      source: file?.source,
+      context: file?.context,
+    };
+    logger.info('[deleteFileFromS3] Deletion initiated', { requestMeta, fileMeta });
+    logger.debug(`[deleteFileFromS3] Call stack:\n${new Error('deleteFileFromS3 stack').stack}`);
+
     const s3 = initializeS3();
 
     try {

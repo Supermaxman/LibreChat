@@ -437,6 +437,13 @@ const uploadAgentAvatarHandler = async (req, res) => {
     if (_avatar && _avatar.source) {
       const { deleteFile } = getStrategyFunctions(_avatar.source);
       try {
+        logger.info('[Agents.avatar] Deleting previous agent avatar', {
+          agentId: agent_id,
+          userId: req?.user?.id,
+          avatar: _avatar,
+          route: req?.originalUrl ?? req?.url,
+        });
+        logger.debug(`[Agents.avatar] Call stack:\n${new Error('Agents.avatar delete stack').stack}`);
         await deleteFile(req, { filepath: _avatar.filepath });
         await deleteFileByFilter({ user: req.user.id, filepath: _avatar.filepath });
       } catch (error) {
