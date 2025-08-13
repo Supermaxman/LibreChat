@@ -453,6 +453,9 @@ export class MCPOAuthHandler {
     logger.debug(`[MCPOAuth] Refreshing tokens for ${metadata.serverName}`);
 
     try {
+      if (!refreshToken || String(refreshToken).trim().length === 0) {
+        throw new Error('Token refresh failed: missing refresh_token');
+      }
       /** If we have stored client information from the original flow, use that first */
       if (metadata.clientInfo?.client_id) {
         logger.debug(

@@ -157,6 +157,7 @@ export class MCPManager {
               refreshTokens: refreshTokensFunction,
               createToken: tokenMethods.createToken,
               updateToken: tokenMethods.updateToken,
+              deleteTokens: tokenMethods.deleteTokens,
             });
           },
         );
@@ -473,6 +474,7 @@ export class MCPManager {
               refreshTokens: refreshTokensFunction,
               createToken: tokenMethods.createToken,
               updateToken: tokenMethods.updateToken,
+              deleteTokens: tokenMethods.deleteTokens,
             });
           },
           signal,

@@ -31,6 +31,7 @@ interface GetTokensParams {
   ) => Promise<MCPOAuthTokens>;
   createToken?: TokenMethods['createToken'];
   updateToken?: TokenMethods['updateToken'];
+  deleteTokens?: TokenMethods['deleteTokens'];
 }
 
 export class MCPTokenStorage {
@@ -232,6 +233,7 @@ export class MCPTokenStorage {
     createToken,
     updateToken,
     refreshTokens,
+    deleteTokens,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
@@ -247,7 +249,9 @@ export class MCPTokenStorage {
 
       /** Check if access token is missing or expired */
       const isMissing = !accessTokenData;
-      const isExpired = accessTokenData?.expiresAt && new Date() >= accessTokenData.expiresAt;
+      const SKEW_MS = 60 * 1000; // proactively refresh 1 minute before expiry
+      const isExpired =
+        accessTokenData?.expiresAt && new Date(Date.now() + SKEW_MS) >= accessTokenData.expiresAt;
 
       if (isMissing || isExpired) {
         logger.info(`${logPrefix} Access token ${isMissing ? 'missing' : 'expired'}`);
@@ -263,6 +267,21 @@ export class MCPTokenStorage {
           logger.info(
             `${logPrefix} Access token ${isMissing ? 'missing' : 'expired'} and no refresh token available`,
           );
+          return null;
+        }
+
+        // If refresh token exists but is expired, wipe tokens to force OAuth
+        if (refreshTokenData?.expiresAt && new Date() >= refreshTokenData.expiresAt) {
+          logger.info(
+            `${logPrefix} Refresh token expired. Deleting stored tokens to force re-authentication`,
+          );
+          try {
+            await deleteTokens?.({ identifier });
+            await deleteTokens?.({ identifier: `${identifier}:refresh` });
+            await deleteTokens?.({ identifier: `${identifier}:client` });
+          } catch (wipeError) {
+            logger.warn(`${logPrefix} Failed to delete expired OAuth tokens`, wipeError);
+          }
           return null;
         }
 
@@ -341,6 +360,17 @@ export class MCPTokenStorage {
           if (errorMessage.includes('unauthorized_client')) {
             logger.info(
               `${logPrefix} Server does not support refresh tokens for this client. New authentication required.`,
+            );
+          }
+          // Wipe tokens on refresh failure so next attempt forces OAuth
+          try {
+            await deleteTokens?.({ identifier });
+            await deleteTokens?.({ identifier: `${identifier}:refresh` });
+            await deleteTokens?.({ identifier: `${identifier}:client` });
+          } catch (wipeError) {
+            logger.warn(
+              `${logPrefix} Failed to delete OAuth tokens after refresh error`,
+              wipeError,
             );
           }
           return null;

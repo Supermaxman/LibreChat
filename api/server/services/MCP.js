@@ -10,7 +10,7 @@ const {
   normalizeServerName,
   convertWithResolvedRefs,
 } = require('@librechat/api');
-const { findToken, createToken, updateToken } = require('~/models');
+const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getCachedTools, loadCustomConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
@@ -186,6 +186,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
           findToken,
           createToken,
           updateToken,
+          deleteTokens,
         },
         oauthStart,
         oauthEnd,
