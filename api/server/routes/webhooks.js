@@ -2,19 +2,18 @@ const express = require('express');
 const crypto = require('crypto');
 const PQueue = require('p-queue').default;
 const { logger } = require('@librechat/data-schemas');
-const {
-  EModelEndpoint,
-  Constants,
-  extractEnvVariable,
-} = require('librechat-data-provider');
+const { EModelEndpoint, Constants, CacheKeys, extractEnvVariable } = require('librechat-data-provider');
 const { getCustomConfig } = require('~/server/services/Config');
 const { loadAgent } = require('~/models/Agent');
-const { findUser } = require('~/models');
+const { findUser, findToken, createToken, updateToken, deleteTokens } = require('~/models');
 const AgentController = require('~/server/controllers/agents/request');
 const { initializeClient } = require('~/server/services/Endpoints/agents');
 const addTitle = require('~/server/services/Endpoints/agents/title');
 const { Writable } = require('stream');
 const { z } = require('zod');
+const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+const { getFlowStateManager } = require('~/config');
+const { getLogStores } = require('~/cache');
 
 
 const router = express.Router();
@@ -153,6 +152,60 @@ router.all('/:server/:hook', async (req, res, next) => {
     const method = req.method.toUpperCase();
     const headers = prepareProxyHeaders(req.headers, serverConfig.headers, server);
 
+    
+    const user = await findUser({ email: hookConfig.user });
+    const userId = user?._id?.toString() || hookConfig.user;
+
+    // Inject x-mcp-authentication header using OAuth tokens for the configured user
+    try {
+      // TODO better way to first verify if a server has OAuth enabled?
+      // I don't trust serverConfig.oauth to be set correctly
+      if (userId) {
+
+        const flowsCache = getLogStores(CacheKeys.FLOWS);
+        const flowManager = getFlowStateManager(flowsCache);
+
+        const refreshTokensFunction = async (
+          refreshToken,
+          metadata,
+        ) => {
+          const serverUrl = serverConfig.url;
+          return await MCPOAuthHandler.refreshOAuthTokens(
+            refreshToken,
+            {
+              serverName: metadata.serverName,
+              serverUrl,
+              clientInfo: metadata.clientInfo,
+            },
+            serverConfig.oauth,
+          );
+        };
+
+        const tokenFlowId = `tokens:${userId}:${server}`;
+        const tokens = await flowManager.createFlowWithHandler(
+          tokenFlowId,
+          'mcp_get_tokens',
+          async () =>
+            await MCPTokenStorage.getTokens({
+              userId,
+              serverName: server,
+              findToken,
+              refreshTokens: refreshTokensFunction,
+              createToken,
+              updateToken,
+              deleteTokens,
+            }),
+        );
+
+        if (tokens?.access_token) {
+          const scheme = tokens.token_type || 'Bearer';
+          headers['x-mcp-authorization'] = `${scheme} ${tokens.access_token}`;
+        }
+      }
+    } catch (authErr) {
+      logger.warn(`[mcp-webhook:${server}/${hook}] Failed to attach OAuth token header`, authErr);
+    }
+
     let body;
     if (method !== 'GET' && method !== 'HEAD') {
       if (req.rawBody) {
@@ -200,8 +253,6 @@ router.all('/:server/:hook', async (req, res, next) => {
     const promptContent = data.promptContent;
     // Enqueue prompt processing if present
     if (promptContent) {
-      const user = await findUser({ email: hookConfig.user });
-      const userId = user?._id?.toString() || hookConfig.user;
       logger.info(
         `[mcp-webhook:${server}/${hook}] Queueing prompt for user ${userId} (${hookConfig.user})`,
       );
