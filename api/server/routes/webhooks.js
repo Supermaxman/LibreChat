@@ -159,8 +159,6 @@ router.all('/:server/:hook', async (req, res, next) => {
       // TODO better way to first verify if a server has OAuth enabled?
       // I don't trust serverConfig.oauth to be set correctly
 
-      const flowsCache = getLogStores(CacheKeys.FLOWS);
-      const flowManager = getFlowStateManager(flowsCache);
       const mcpManager = getMCPManager(userId);
       
       // const userConnection = await mcpManager.getUserConnection({
