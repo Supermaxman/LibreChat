@@ -163,19 +163,21 @@ router.all('/:server/:hook', async (req, res, next) => {
       const flowManager = getFlowStateManager(flowsCache);
       const mcpManager = getMCPManager(userId);
       
-      const userConnection = await mcpManager.getUserConnection({
-        user: { id: userId },
-        serverName: server,
-        flowManager,
-        tokenMethods: {
-          findToken,
-          updateToken,
-          createToken,
-          deleteTokens,
-        },
-      });
+      // const userConnection = await mcpManager.getUserConnection({
+      //   user: { id: userId },
+      //   serverName: server,
+      //   flowManager,
+      //   tokenMethods: {
+      //     findToken,
+      //     updateToken,
+      //     createToken,
+      //     deleteTokens,
+      //   },
+      // });
+      const userConnections = mcpManager.getUserConnections(userId);
+      const userConnection = userConnections?.get(server);
 
-      const tokens = userConnection.getOAuthTokens();
+      const tokens = userConnection?.getOAuthTokens();
 
       if (tokens?.access_token) {
         const scheme = tokens.token_type || 'Bearer';
