@@ -107,7 +107,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
   const availableTools = await getCachedTools({ userId: req.user?.id, includeGlobal: true });
   const toolDefinition = availableTools?.[toolKey]?.function;
   if (!toolDefinition) {
-    logger.error(`Tool ${toolKey} not found in available tools`);
+    logger.debug(`Tool ${toolKey} not found in available tools`);
     return null;
   }
   /** @type {LCTool} */
