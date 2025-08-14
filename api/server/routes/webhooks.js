@@ -162,7 +162,7 @@ router.all('/:server/:hook', async (req, res, next) => {
       // get spammed by webhook sender, just fast return 204
 
       const mcpManager = getMCPManager(userId);
-      
+      logger.info(`[mcp-webhook:${server}/${hook}] Getting user connection for user ${userId}`);
       const userConnection = await mcpManager.getUserConnection({
         user: { id: userId },
         serverName: server,
@@ -175,20 +175,23 @@ router.all('/:server/:hook', async (req, res, next) => {
         },
       });
 
+      logger.info(`[mcp-webhook:${server}/${hook}] User connection found for user ${userId}`);
+
       const tokens = userConnection?.getOAuthTokens();
 
       if (tokens?.access_token) {
         const scheme = tokens.token_type || 'Bearer';
         headers['x-mcp-authorization'] = `${scheme} ${tokens.access_token}`;
+        logger.info(`[mcp-webhook:${server}/${hook}] OAuth tokens found for user ${userId}`);
       } else {
         logger.warn(`[mcp-webhook:${server}/${hook}] No OAuth tokens found for user ${userId}`);
-        res.set('Content-Type', 'text/plain');
-        return res.status(204).send('No OAuth tokens found for user');
+        // res.set('Content-Type', 'text/plain');
+        // return res.status(204).send('No OAuth tokens found for user');
       }      
     } catch (authErr) {
       logger.warn(`[mcp-webhook:${server}/${hook}] Failed to attach OAuth token header`, authErr);
-      res.set('Content-Type', 'text/plain');
-      return res.status(204).send('Failed to attach OAuth token header');
+      // res.set('Content-Type', 'text/plain');
+      // return res.status(204).send('Failed to attach OAuth token header');
     }
 
     let body;
@@ -225,6 +228,10 @@ router.all('/:server/:hook', async (req, res, next) => {
       const upstreamText = await response.text().catch(() => '');
       logger.info(`[mcp-webhook:${server}/${hook}] Received non-200 upstream response: ${response.status}`);
       res.set('Content-Type', upstreamContentType);
+      if (response.status === 400) {
+        logger.info(`[mcp-webhook:${server}/${hook}] Received 400 upstream response: ${response.status}`);
+        return res.status(204).send(upstreamText);
+      }
       return res.status(response.status).send(upstreamText);
     }
 
