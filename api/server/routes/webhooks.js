@@ -160,7 +160,9 @@ router.all('/:server/:hook', async (req, res, next) => {
       // I don't trust serverConfig.oauth to be set correctly
       // TODO this should flat out fail but send back success so we don't
       // get spammed by webhook sender, just fast return 204
-
+      const flowsCache = getLogStores(CacheKeys.FLOWS);
+      const flowManager = getFlowStateManager(flowsCache);
+      
       const mcpManager = getMCPManager(userId);
       logger.info(`[mcp-webhook:${server}/${hook}] Getting user connection for user ${userId}`);
       const userConnection = await mcpManager.getUserConnection({
