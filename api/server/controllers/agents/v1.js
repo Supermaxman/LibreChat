@@ -368,6 +368,34 @@ const getListAgentsHandler = async (req, res) => {
     const data = await getListAgents({
       author: req.user.id,
     });
+    // Refresh S3 avatar URLs so clients receive valid, non-expired links
+    if (Array.isArray(data?.data) && data.data.length > 0) {
+      const refreshed = await Promise.all(
+        data.data.map(async (agent) => {
+          try {
+            if (agent?.avatar && agent.avatar?.source === FileSources.s3 && agent.avatar?.filepath) {
+              const currentUrl = agent.avatar.filepath;
+              const newUrl = await refreshS3Url(agent.avatar);
+              if (newUrl && newUrl !== currentUrl) {
+                agent.avatar.filepath = newUrl;
+                // Persist refreshed URL to reduce future refreshes
+                await updateAgent({ id: agent.id }, { avatar: agent.avatar }, {
+                  updatingUserId: req.user.id,
+                  skipVersioning: true,
+                });
+              }
+            }
+          } catch (err) {
+            logger.warn('[/Agents] Failed to refresh S3 URL for agent avatar', {
+              agentId: agent?.id,
+              error: err?.message,
+            });
+          }
+          return agent;
+        }),
+      );
+      data.data = refreshed;
+    }
     return res.json(data);
   } catch (error) {
     logger.error('[/Agents] Error listing Agents', error);
