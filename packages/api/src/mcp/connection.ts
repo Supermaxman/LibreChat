@@ -644,6 +644,10 @@ export class MCPConnection extends EventEmitter {
     this.oauthTokens = tokens;
   }
 
+  public getOAuthTokens(): MCPOAuthTokens | undefined | null {
+    return this.oauthTokens;
+  }
+
   private isOAuthError(error: unknown): boolean {
     if (!error || typeof error !== 'object') {
       return false;

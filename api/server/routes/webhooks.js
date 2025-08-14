@@ -10,9 +10,7 @@ const AgentController = require('~/server/controllers/agents/request');
 const { initializeClient } = require('~/server/services/Endpoints/agents');
 const addTitle = require('~/server/services/Endpoints/agents/title');
 const { Writable } = require('stream');
-const { z } = require('zod');
-const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
-const { getFlowStateManager } = require('~/config');
+const { getFlowStateManager, getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 
@@ -160,48 +158,32 @@ router.all('/:server/:hook', async (req, res, next) => {
     try {
       // TODO better way to first verify if a server has OAuth enabled?
       // I don't trust serverConfig.oauth to be set correctly
-      if (userId) {
 
-        const flowsCache = getLogStores(CacheKeys.FLOWS);
-        const flowManager = getFlowStateManager(flowsCache);
+      const flowsCache = getLogStores(CacheKeys.FLOWS);
+      const flowManager = getFlowStateManager(flowsCache);
+      const mcpManager = getMCPManager(userId);
+      
+      const userConnection = await mcpManager.getUserConnection({
+        user: { id: userId },
+        serverName: server,
+        flowManager,
+        tokenMethods: {
+          findToken,
+          updateToken,
+          createToken,
+          deleteTokens,
+        },
+      });
 
-        const refreshTokensFunction = async (
-          refreshToken,
-          metadata,
-        ) => {
-          const serverUrl = serverConfig.url;
-          return await MCPOAuthHandler.refreshOAuthTokens(
-            refreshToken,
-            {
-              serverName: metadata.serverName,
-              serverUrl,
-              clientInfo: metadata.clientInfo,
-            },
-            serverConfig.oauth,
-          );
-        };
+      const tokens = userConnection.getOAuthTokens();
 
-        const tokenFlowId = `tokens:${userId}:${server}`;
-        const tokens = await flowManager.createFlowWithHandler(
-          tokenFlowId,
-          'mcp_get_tokens',
-          async () =>
-            await MCPTokenStorage.getTokens({
-              userId,
-              serverName: server,
-              findToken,
-              refreshTokens: refreshTokensFunction,
-              createToken,
-              updateToken,
-              deleteTokens,
-            }),
-        );
-
-        if (tokens?.access_token) {
-          const scheme = tokens.token_type || 'Bearer';
-          headers['x-mcp-authorization'] = `${scheme} ${tokens.access_token}`;
-        }
+      if (tokens?.access_token) {
+        const scheme = tokens.token_type || 'Bearer';
+        headers['x-mcp-authorization'] = `${scheme} ${tokens.access_token}`;
+      } else {
+        logger.warn(`[mcp-webhook:${server}/${hook}] No OAuth tokens found for user ${userId}`);
       }
+      
     } catch (authErr) {
       logger.warn(`[mcp-webhook:${server}/${hook}] Failed to attach OAuth token header`, authErr);
     }
