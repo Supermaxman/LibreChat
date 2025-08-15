@@ -65,7 +65,7 @@ export class MCPTokenStorage {
       // Encrypt and store access token
       const encryptedAccessToken = await encryptV2(tokens.access_token);
 
-      logger.debug(
+      logger.info(
         `${logPrefix} Token expires_in: ${'expires_in' in tokens ? tokens.expires_in : 'N/A'}, expires_at: ${'expires_at' in tokens ? tokens.expires_at : 'N/A'}`,
       );
 
@@ -73,20 +73,20 @@ export class MCPTokenStorage {
       let accessTokenExpiry: Date;
       if ('expires_at' in tokens && tokens.expires_at) {
         /** MCPOAuthTokens format - already has calculated expiry */
-        logger.debug(`${logPrefix} Using expires_at: ${tokens.expires_at}`);
+        logger.info(`${logPrefix} Using expires_at: ${tokens.expires_at}`);
         accessTokenExpiry = new Date(tokens.expires_at);
       } else if (tokens.expires_in) {
         /** Standard OAuthTokens format - calculate expiry */
-        logger.debug(`${logPrefix} Using expires_in: ${tokens.expires_in}`);
+        logger.info(`${logPrefix} Using expires_in: ${tokens.expires_in}`);
         accessTokenExpiry = new Date(Date.now() + tokens.expires_in * 1000);
       } else {
         /** No expiry provided - default to 1 year */
-        logger.debug(`${logPrefix} No expiry provided, using default`);
+        logger.info(`${logPrefix} No expiry provided, using default`);
         accessTokenExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
       }
 
-      logger.debug(`${logPrefix} Calculated expiry date: ${accessTokenExpiry.toISOString()}`);
-      logger.debug(
+      logger.info(`${logPrefix} Calculated expiry date: ${accessTokenExpiry.toISOString()}`);
+      logger.info(
         `${logPrefix} Date object: ${JSON.stringify({
           time: accessTokenExpiry.getTime(),
           valid: !isNaN(accessTokenExpiry.getTime()),
@@ -103,12 +103,18 @@ export class MCPTokenStorage {
       // Calculate expiresIn (seconds from now)
       const expiresIn = Math.floor((accessTokenExpiry.getTime() - Date.now()) / 1000);
 
-      const accessTokenData = {
+      const accessTokenCreateData = {
         userId,
         type: 'mcp_oauth',
         identifier,
         token: encryptedAccessToken,
         expiresIn: expiresIn > 0 ? expiresIn : 365 * 24 * 60 * 60, // Default to 1 year if negative
+      };
+      const accessTokenUpdateData = {
+        type: 'mcp_oauth',
+        identifier,
+        token: encryptedAccessToken,
+        expiresAt: accessTokenExpiry,
       };
 
       // Check if token already exists and update if it does
@@ -120,16 +126,16 @@ export class MCPTokenStorage {
             : await findToken({ userId, identifier });
 
         if (existingToken) {
-          await updateToken({ userId, identifier }, accessTokenData);
-          logger.debug(`${logPrefix} Updated existing access token`);
+          await updateToken({ userId, identifier }, accessTokenUpdateData);
+          logger.info(`${logPrefix} Updated existing access token`);
         } else {
-          await createToken(accessTokenData);
-          logger.debug(`${logPrefix} Created new access token`);
+          await createToken(accessTokenCreateData);
+          logger.info(`${logPrefix} Created new access token`);
         }
       } else {
         // Create new token if it's initial store or update methods not provided
-        await createToken(accessTokenData);
-        logger.debug(`${logPrefix} Created access token (no update methods available)`);
+        await createToken(accessTokenCreateData);
+        logger.info(`${logPrefix} Created access token (no update methods available)`);
       }
 
       // Store refresh token if available
@@ -143,12 +149,18 @@ export class MCPTokenStorage {
         /** Calculated expiresIn for refresh token */
         const refreshExpiresIn = Math.floor((refreshTokenExpiry.getTime() - Date.now()) / 1000);
 
-        const refreshTokenData = {
+        const refreshTokenCreateData = {
           userId,
           type: 'mcp_oauth_refresh',
           identifier: `${identifier}:refresh`,
           token: encryptedRefreshToken,
           expiresIn: refreshExpiresIn > 0 ? refreshExpiresIn : 365 * 24 * 60 * 60,
+        };
+        const refreshTokenUpdateData = {
+          type: 'mcp_oauth_refresh',
+          identifier: `${identifier}:refresh`,
+          token: encryptedRefreshToken,
+          expiresAt: refreshTokenExpiry,
         };
 
         // Check if refresh token already exists and update if it does
@@ -163,32 +175,41 @@ export class MCPTokenStorage {
                 });
 
           if (existingRefreshToken) {
-            await updateToken({ userId, identifier: `${identifier}:refresh` }, refreshTokenData);
-            logger.debug(`${logPrefix} Updated existing refresh token`);
+            await updateToken(
+              { userId, identifier: `${identifier}:refresh` },
+              refreshTokenUpdateData,
+            );
+            logger.info(`${logPrefix} Updated existing refresh token`);
           } else {
-            await createToken(refreshTokenData);
-            logger.debug(`${logPrefix} Created new refresh token`);
+            await createToken(refreshTokenCreateData);
+            logger.info(`${logPrefix} Created new refresh token`);
           }
         } else {
-          await createToken(refreshTokenData);
-          logger.debug(`${logPrefix} Created refresh token (no update methods available)`);
+          await createToken(refreshTokenCreateData);
+          logger.info(`${logPrefix} Created refresh token (no update methods available)`);
         }
       }
 
       /** Store client information if provided */
       if (clientInfo) {
-        logger.debug(`${logPrefix} Storing client info:`, {
+        logger.info(`${logPrefix} Storing client info:`, {
           client_id: clientInfo.client_id,
           has_client_secret: !!clientInfo.client_secret,
         });
         const encryptedClientInfo = await encryptV2(JSON.stringify(clientInfo));
 
-        const clientInfoData = {
+        const clientInfoCreateData = {
           userId,
           type: 'mcp_oauth_client',
           identifier: `${identifier}:client`,
           token: encryptedClientInfo,
           expiresIn: 365 * 24 * 60 * 60,
+        };
+        const clientInfoUpdateData = {
+          type: 'mcp_oauth_client',
+          identifier: `${identifier}:client`,
+          token: encryptedClientInfo,
+          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
         };
 
         // Check if client info already exists and update if it does
@@ -203,19 +224,19 @@ export class MCPTokenStorage {
                 });
 
           if (existingClientInfo) {
-            await updateToken({ userId, identifier: `${identifier}:client` }, clientInfoData);
-            logger.debug(`${logPrefix} Updated existing client info`);
+            await updateToken({ userId, identifier: `${identifier}:client` }, clientInfoUpdateData);
+            logger.info(`${logPrefix} Updated existing client info`);
           } else {
-            await createToken(clientInfoData);
-            logger.debug(`${logPrefix} Created new client info`);
+            await createToken(clientInfoCreateData);
+            logger.info(`${logPrefix} Created new client info`);
           }
         } else {
-          await createToken(clientInfoData);
-          logger.debug(`${logPrefix} Created client info (no update methods available)`);
+          await createToken(clientInfoCreateData);
+          logger.info(`${logPrefix} Created client info (no update methods available)`);
         }
       }
 
-      logger.debug(`${logPrefix} Stored OAuth tokens`);
+      logger.info(`${logPrefix} Stored OAuth tokens`);
     } catch (error) {
       const logPrefix = this.getLogPrefix(userId, serverName);
       logger.error(`${logPrefix} Failed to store tokens`, error);
@@ -252,6 +273,10 @@ export class MCPTokenStorage {
       const SKEW_MS = 60 * 1000; // proactively refresh 1 minute before expiry
       const isExpired =
         accessTokenData?.expiresAt && new Date(Date.now() + SKEW_MS) >= accessTokenData.expiresAt;
+
+      logger.info(
+        `${logPrefix} Access token expires at: ${accessTokenData?.expiresAt?.toISOString()}`,
+      );
 
       if (isMissing || isExpired) {
         logger.info(`${logPrefix} Access token ${isMissing ? 'missing' : 'expired'}`);

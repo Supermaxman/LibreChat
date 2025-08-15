@@ -495,6 +495,64 @@ export class MCPManager {
 
     connection.on('oauthRequired', async (data) => {
       logger.info(`[MCP][User: ${userId}][${serverName}] oauthRequired event received`);
+      // Attempt silent refresh first using stored refresh token
+      if (tokenMethods?.findToken) {
+        logger.info(`[MCP][User: ${userId}][${serverName}] Attempting silent refresh`);
+        try {
+          const refreshTokensFunction = async (
+            refreshToken: string,
+            metadata: {
+              userId: string;
+              serverName: string;
+              identifier: string;
+              clientInfo?: OAuthClientInformation;
+            },
+          ) => {
+            const serverUrl = (config as t.SSEOptions | t.StreamableHTTPOptions).url;
+            return await MCPOAuthHandler.refreshOAuthTokens(
+              refreshToken,
+              {
+                serverName: metadata.serverName,
+                serverUrl,
+                clientInfo: metadata.clientInfo,
+              },
+              config.oauth,
+            );
+          };
+
+          const tokenFlowId = `tokens:${userId}:${serverName}`;
+          const newTokens = await flowManager.createFlowWithHandler(
+            tokenFlowId,
+            'mcp_get_tokens',
+            async () => {
+              return await MCPTokenStorage.getTokens({
+                userId,
+                serverName,
+                findToken: tokenMethods.findToken!,
+                refreshTokens: refreshTokensFunction,
+                createToken: tokenMethods.createToken,
+                updateToken: tokenMethods.updateToken,
+                deleteTokens: tokenMethods.deleteTokens,
+              });
+            },
+            data?.signal as AbortSignal | undefined,
+          );
+
+          if (newTokens) {
+            logger.info(
+              `[MCP][User: ${userId}][${serverName}] Silent token refresh succeeded, retrying connection`,
+            );
+            connection?.setOAuthTokens(newTokens);
+            connection?.emit('oauthHandled');
+            return;
+          }
+        } catch (silentError) {
+          logger.warn(
+            `[MCP][User: ${userId}][${serverName}] Silent token refresh failed; falling back to interactive OAuth`,
+            silentError,
+          );
+        }
+      }
 
       // If we just want to initiate OAuth and return, handle it differently
       if (returnOnOAuth) {
