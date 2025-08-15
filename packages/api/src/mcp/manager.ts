@@ -24,6 +24,7 @@ export class MCPManager {
   private userConnections: Map<string, Map<string, MCPConnection>> = new Map();
   /** Last activity timestamp for users (not per server) */
   private userLastActivity: Map<string, number> = new Map();
+  // used to be 15 * 60 * 1000; // 15 minutes
   private readonly USER_CONNECTION_IDLE_TIMEOUT = 365 * 24 * 60 * 60 * 1000; // 1 year (TODO: make configurable)
   private mcpConfigs: t.MCPServers = {};
   /** Store MCP server instructions */
@@ -406,7 +407,27 @@ export class MCPManager {
       }
       connection = undefined; // Force creation of a new connection
     } else if (connection) {
-      if (await connection.isConnected()) {
+      // If there is an existing connection that should have tokens, verify token freshness first
+      const inMemoryTokens = connection.getOAuthTokens();
+      const expiresAt = inMemoryTokens?.expires_at;
+      const SKEW_MS = 60 * 1000; // proactively treat as expired 1 minute early
+      const tokenExpired = typeof expiresAt === 'number' && Date.now() + SKEW_MS >= expiresAt;
+
+      if (tokenExpired && tokenMethods?.findToken) {
+        logger.info(
+          `[MCP][User: ${userId}][${serverName}] Existing connection has expired OAuth token. Rebuilding connection.`,
+        );
+        try {
+          await connection.disconnect();
+        } catch (err) {
+          logger.warn(
+            `[MCP][User: ${userId}][${serverName}] Error disconnecting expired connection:`,
+            err,
+          );
+        }
+        this.removeUserConnection(userId, serverName);
+        connection = undefined;
+      } else if (await connection.isConnected()) {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
         this.updateUserLastActivity(userId);
         return connection;

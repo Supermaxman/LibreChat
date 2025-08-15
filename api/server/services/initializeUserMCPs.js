@@ -33,6 +33,11 @@ const reinitializeMCP = async (serverName, userId) => {
 
     await mcpManager.disconnectServer(serverName);
     logger.info(`[MCP Reinitialize] Disconnected existing server: ${serverName}`);
+    // Also disconnect any existing user-scoped connection to ensure fresh Authorization headers
+    await mcpManager.disconnectUserConnection(user.id, serverName);
+    logger.info(
+      `[MCP Reinitialize] Disconnected existing user connection for ${serverName} (user: ${user.id})`,
+    );
 
     const serverConfig = config.mcpServers[serverName];
     mcpManager.mcpConfigs[serverName] = serverConfig;
