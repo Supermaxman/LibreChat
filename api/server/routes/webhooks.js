@@ -29,7 +29,7 @@ function resolveEnvValue(value, name, keyPath) {
 
 async function processMCPWebhook({ req, name, userId, hookConfig, promptContent }) {
   try {
-    logger.info(`[mcp-webhook:${name}] Starting prompt for user ${userId}`);
+    logger.info(`[mcp-webhook:${name}/prompt] Starting prompt for user ${userId}`);
     const prefix = hookConfig.prompt ? `${hookConfig.prompt}\n\n` : '';
     const text = `${prefix}${promptContent ?? ''}`;
 
@@ -66,9 +66,9 @@ async function processMCPWebhook({ req, name, userId, hookConfig, promptContent 
     dummyRes.removeListener = () => {};
 
     await AgentController(agentReq, dummyRes, () => {}, initializeClient, addTitle);
-    logger.info(`[mcp-webhook:${name}] Processed prompt for user ${userId}`);
+    logger.info(`[mcp-webhook:${name}/prompt] Processed prompt for user ${userId}`);
   } catch (error) {
-    logger.error(`[mcp-webhook:${name}] Processing failed`, error);
+    logger.error(`[mcp-webhook:${name}/prompt] Processing failed`, error);
   }
 }
 
@@ -129,6 +129,7 @@ function resolveHookConfigDeep(input) {
 // Dynamic MCP webhook proxy: /api/webhooks/:server/:hook
 router.all('/:server/:hook', async (req, res, next) => {
   const { server, hook } = req.params;
+  logger.info(`[mcp-webhook:${server}/${hook}/proxy] Starting proxy`);
   const config = await getCustomConfig();
   const mcpServers = config?.mcpServers || {};
   const serverConfig = mcpServers?.[server];
@@ -163,7 +164,7 @@ router.all('/:server/:hook', async (req, res, next) => {
       const flowsCache = getLogStores(CacheKeys.FLOWS);
       const flowManager = getFlowStateManager(flowsCache);
       
-      logger.info(`[mcp-webhook:${server}/${hook}] Getting user token for user ${userId}`);
+      logger.info(`[mcp-webhook:${server}/${hook}/proxy] Getting user token for user ${userId}`);
       
       /** Refresh function for user-specific connections */
       const refreshTokensFunction = async (
@@ -203,14 +204,14 @@ router.all('/:server/:hook', async (req, res, next) => {
 
       if (tokens?.access_token) {
         headers['x-mcp-authorization'] = `Bearer ${tokens.access_token}`;
-        logger.info(`[mcp-webhook:${server}/${hook}] OAuth tokens found for user ${userId} expires at ${tokens.expires_at} seconds`);
+        logger.info(`[mcp-webhook:${server}/${hook}/proxy] OAuth tokens found for user ${userId} expires at ${tokens.expires_at} seconds`);
       } else {
-        logger.warn(`[mcp-webhook:${server}/${hook}] No OAuth tokens found for user ${userId}`);
+        logger.warn(`[mcp-webhook:${server}/${hook}/proxy] No OAuth tokens found for user ${userId}`);
         // res.set('Content-Type', 'text/plain');
         // return res.status(204).send('No OAuth tokens found for user');
       }      
     } catch (authErr) {
-      logger.warn(`[mcp-webhook:${server}/${hook}] Failed to attach OAuth token header`, authErr);
+      logger.warn(`[mcp-webhook:${server}/${hook}/proxy] Failed to attach OAuth token header`, authErr);
       // res.set('Content-Type', 'text/plain');
       // return res.status(204).send('Failed to attach OAuth token header');
     }
@@ -247,27 +248,27 @@ router.all('/:server/:hook', async (req, res, next) => {
     if (response.status !== 200) {
       const upstreamContentType = response.headers.get('content-type') || 'text/plain';
       const upstreamText = await response.text().catch(() => '');
-      logger.info(`[mcp-webhook:${server}/${hook}] Received non-200 upstream response: ${response.status}`);
+      logger.info(`[mcp-webhook:${server}/${hook}/proxy] Received non-200 upstream response: ${response.status}`);
       res.set('Content-Type', upstreamContentType);
       if (response.status === 400) {
-        logger.info(`[mcp-webhook:${server}/${hook}] Received 400 upstream response: ${response.status}`);
+        logger.info(`[mcp-webhook:${server}/${hook}/proxy] Received 400 upstream response: ${response.status}`);
         return res.status(204).send(upstreamText);
       }
       return res.status(response.status).send(upstreamText);
     }
 
     const data = await response.json();
-    logger.info(`[mcp-webhook:${server}/${hook}] Received 200 response: ${response.status}`);
 
     // Prepare planned response (send after queueing)
     const responseCode = data.reqResponseCode;
     const responseContentType = data.reqResponseContentType === 'json' ? 'application/json' : 'text/plain';
     const responseContent = data.reqResponseContent;
     const promptContent = data.promptContent;
+    logger.info(`[mcp-webhook:${server}/${hook}/proxy] Received 200 response: ${responseCode} (${responseContentType}) ${promptContent ? 'with prompt' : 'without prompt'}`);
     // Enqueue prompt processing if present
     if (promptContent) {
       logger.info(
-        `[mcp-webhook:${server}/${hook}] Queueing prompt for user ${userId} (${hookConfig.user})`,
+        `[mcp-webhook:${server}/${hook}/proxy] Queueing prompt for user ${userId} (${hookConfig.user})`,
       );
       queue.add(() =>
         processMCPWebhook({
@@ -285,7 +286,7 @@ router.all('/:server/:hook', async (req, res, next) => {
     return res.status(responseCode).send(responseContent);
 
   } catch (err) {
-    logger.error(`[mcp-webhook:${server}/${hook}] proxy error`, err);
+    logger.error(`[mcp-webhook:${server}/${hook}/proxy] proxy error`, err);
     res.status(502).json({ error: 'Proxy error' });
   }
 });
