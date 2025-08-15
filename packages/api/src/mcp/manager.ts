@@ -24,8 +24,7 @@ export class MCPManager {
   private userConnections: Map<string, Map<string, MCPConnection>> = new Map();
   /** Last activity timestamp for users (not per server) */
   private userLastActivity: Map<string, number> = new Map();
-  // used to be 15 * 60 * 1000; // 15 minutes
-  private readonly USER_CONNECTION_IDLE_TIMEOUT = 365 * 24 * 60 * 60 * 1000; // 1 year (TODO: make configurable)
+  private readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes
   private mcpConfigs: t.MCPServers = {};
   /** Store MCP server instructions */
   private serverInstructions: Map<string, string> = new Map();
