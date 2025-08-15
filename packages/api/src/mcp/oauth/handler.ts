@@ -378,7 +378,7 @@ export class MCPOAuthHandler {
         resource,
       });
 
-      logger.debug('[MCPOAuth] Raw tokens from exchange:', {
+      logger.info('[MCPOAuth] Raw tokens from exchange:', {
         access_token: tokens.access_token ? '[REDACTED]' : undefined,
         refresh_token: tokens.refresh_token ? '[REDACTED]' : undefined,
         expires_in: tokens.expires_in,

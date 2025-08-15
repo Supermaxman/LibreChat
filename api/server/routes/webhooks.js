@@ -1,5 +1,4 @@
 const express = require('express');
-const crypto = require('crypto');
 const PQueue = require('p-queue').default;
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint, Constants, CacheKeys, extractEnvVariable } = require('librechat-data-provider');
@@ -12,6 +11,7 @@ const addTitle = require('~/server/services/Endpoints/agents/title');
 const { Writable } = require('stream');
 const { getFlowStateManager, getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
+const { MCPTokenStorage, MCPOAuthHandler } = require('@librechat/api');
 
 
 const router = express.Router();
@@ -163,28 +163,47 @@ router.all('/:server/:hook', async (req, res, next) => {
       const flowsCache = getLogStores(CacheKeys.FLOWS);
       const flowManager = getFlowStateManager(flowsCache);
       
-      const mcpManager = getMCPManager(userId);
-      logger.info(`[mcp-webhook:${server}/${hook}] Getting user connection for user ${userId}`);
-      const userConnection = await mcpManager.getUserConnection({
-        user: { id: userId },
-        serverName: server,
-        flowManager,
-        tokenMethods: {
-          findToken,
-          updateToken,
-          createToken,
-          deleteTokens,
+      logger.info(`[mcp-webhook:${server}/${hook}] Getting user token for user ${userId}`);
+      
+      /** Refresh function for user-specific connections */
+      const refreshTokensFunction = async (
+        refreshToken,
+        metadata,
+      ) => {
+        /** URL from config since connection doesn't exist yet */
+        const serverUrl = serverConfig.url;
+        return await MCPOAuthHandler.refreshOAuthTokens(
+          refreshToken,
+          {
+            serverName: metadata.serverName,
+            serverUrl,
+            clientInfo: metadata.clientInfo,
+          },
+          serverConfig.oauth,
+        );
+      };
+
+      /** Flow state to prevent concurrent token operations */
+      const tokenFlowId = `tokens:${userId}:${server}`;
+      const tokens = await flowManager.createFlowWithHandler(
+        tokenFlowId,
+        'mcp_get_tokens',
+        async () => {
+          return await MCPTokenStorage.getTokens({
+            userId,
+            serverName: server,
+            findToken: findToken,
+            refreshTokens: refreshTokensFunction,
+            createToken: createToken,
+            updateToken: updateToken,
+            deleteTokens: deleteTokens,
+          });
         },
-      });
-
-      logger.info(`[mcp-webhook:${server}/${hook}] User connection found for user ${userId}`);
-
-      const tokens = userConnection?.getOAuthTokens();
+      );
 
       if (tokens?.access_token) {
-        const scheme = tokens.token_type || 'Bearer';
-        headers['x-mcp-authorization'] = `${scheme} ${tokens.access_token}`;
-        logger.info(`[mcp-webhook:${server}/${hook}] OAuth tokens found for user ${userId}`);
+        headers['x-mcp-authorization'] = `Bearer ${tokens.access_token}`;
+        logger.info(`[mcp-webhook:${server}/${hook}] OAuth tokens found for user ${userId} expires at ${tokens.expires_at} seconds`);
       } else {
         logger.warn(`[mcp-webhook:${server}/${hook}] No OAuth tokens found for user ${userId}`);
         // res.set('Content-Type', 'text/plain');

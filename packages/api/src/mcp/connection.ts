@@ -641,6 +641,7 @@ export class MCPConnection extends EventEmitter {
   }
 
   public setOAuthTokens(tokens: MCPOAuthTokens): void {
+    console.info(`[MCPConnection] Setting OAuth tokens for ${this.serverName}`, tokens);
     this.oauthTokens = tokens;
   }
 
