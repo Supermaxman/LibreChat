@@ -35,6 +35,8 @@ async function processMCPWebhook({ req, name, userId, hookConfig, promptContent 
 
     const agentReq = req;
     agentReq.user = { id: userId };
+    // Mark webhook-initiated chats as Automated for auto-tagging
+    agentReq.originTag = 'Automated';
     agentReq.body = {
       text,
       endpoint: EModelEndpoint.agents,

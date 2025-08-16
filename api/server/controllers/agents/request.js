@@ -8,6 +8,7 @@ const {
 } = require('~/server/middleware');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { saveMessage } = require('~/models');
+const { updateTagsForConversation } = require('~/models/ConversationTag');
 
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
   let {
@@ -197,6 +198,17 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     const conversation = { ...convoData };
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
+
+    // Auto-tag new conversations if origin tag is provided
+    if (newConvo && req.originTag && parentMessageId === Constants.NO_PARENT) {
+      try {
+        const existing = Array.isArray(conversation.tags) ? conversation.tags : [];
+        const desired = Array.from(new Set([...existing, req.originTag]));
+        await updateTagsForConversation(userId, conversation.conversationId, desired);
+      } catch (e) {
+        logger.error('[AgentController] Error auto-tagging conversation', e);
+      }
+    }
 
     // Process files if needed
     if (req.body.files && client.options?.attachments) {

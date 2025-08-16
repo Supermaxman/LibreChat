@@ -30,6 +30,8 @@ router.use(buildEndpointOption);
 router.use(setHeaders);
 
 const controller = async (req, res, next) => {
+  // Mark user-initiated chats as Manual for auto-tagging
+  req.originTag = 'Manual';
   await AgentController(req, res, next, initializeClient, addTitle);
 };
 
