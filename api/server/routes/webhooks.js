@@ -15,7 +15,8 @@ const { MCPTokenStorage, MCPOAuthHandler } = require('@librechat/api');
 
 
 const router = express.Router();
-const queue = new PQueue({ concurrency: 1 });
+const processQueue = new PQueue({ concurrency: 1 });
+const promptQueue = new PQueue({ concurrency: 1 });
 
 
 function resolveEnvValue(value, name, keyPath) {
@@ -24,6 +25,117 @@ function resolveEnvValue(value, name, keyPath) {
   }
   const resolved = extractEnvVariable(value);
   return resolved;
+}
+
+
+async function processWebhookData({ server, hook, hookConfig, serverConfig, processData }) {
+  try {
+    const user = await findUser({ email: hookConfig.user });
+    const userId = user?._id?.toString() || hookConfig.user;
+    logger.info(`[mcp-webhook:${server}/${hook}/process] Starting webhook processing for user ${userId}`);
+    const processUrl = buildTargetWebhookProcessUrl({ baseUrl: serverConfig.url, hook });
+    
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-mcp-name': server,
+    };
+    // Inject x-mcp-authentication header using OAuth tokens for the configured user
+    try {
+      // TODO better way to first verify if a server has OAuth enabled?
+      const flowsCache = getLogStores(CacheKeys.FLOWS);
+      const flowManager = getFlowStateManager(flowsCache);
+      
+      logger.info(`[mcp-webhook:${server}/${hook}/process] Getting user token for user ${userId}`);
+      
+      /** Refresh function for user-specific connections */
+      const refreshTokensFunction = async (
+        refreshToken,
+        metadata,
+      ) => {
+        /** URL from config since connection doesn't exist yet */
+        const serverUrl = serverConfig.url;
+        return await MCPOAuthHandler.refreshOAuthTokens(
+          refreshToken,
+          {
+            serverName: metadata.serverName,
+            serverUrl,
+            clientInfo: metadata.clientInfo,
+          },
+          serverConfig.oauth,
+        );
+      };
+
+      /** Flow state to prevent concurrent token operations */
+      const tokenFlowId = `tokens:${userId}:${server}`;
+      const tokens = await flowManager.createFlowWithHandler(
+        tokenFlowId,
+        'mcp_get_tokens',
+        async () => {
+          return await MCPTokenStorage.getTokens({
+            userId,
+            serverName: server,
+            findToken: findToken,
+            refreshTokens: refreshTokensFunction,
+            createToken: createToken,
+            updateToken: updateToken,
+            deleteTokens: deleteTokens,
+          });
+        },
+      );
+
+      if (tokens?.access_token) {
+        headers['Authorization'] = `Bearer ${tokens.access_token}`;
+        logger.info(`[mcp-webhook:${server}/${hook}/process] OAuth tokens found for user ${userId} expires at ${tokens.expires_at} seconds`);
+      } else {
+        logger.warn(`[mcp-webhook:${server}/${hook}/process] No OAuth tokens found for user ${userId}`);
+      }      
+    } catch (authErr) {
+      logger.warn(`[mcp-webhook:${server}/${hook}/process] Failed to attach OAuth token header`, authErr);
+    }
+    
+    const controller = new AbortController();
+    const timeoutMs = serverConfig.timeout ?? serverConfig.initTimeout ?? 30000;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    const response = await fetch(processUrl, {
+      method: 'POST',
+      headers,
+      body: processData,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (response.status !== 200) {
+      logger.error(`[mcp-webhook:${server}/${hook}/process] Received non-200 response: ${response.status}`);
+      return;
+    }
+    
+    const data = await response.json();
+
+    const promptContent = data.promptContent;
+    logger.info(`[mcp-webhook:${server}/${hook}/process] Received 200 response: ${promptContent ? 'with prompt' : 'without prompt'}`);
+    // Enqueue prompt processing if present
+    if (promptContent) {
+      logger.info(
+        `[mcp-webhook:${server}/${hook}/process] Queueing prompt for user ${userId} (${hookConfig.user})`,
+      );
+      promptQueue.add(() =>
+        processMCPWebhook({
+          req,
+          name: `${server}/${hook}`,
+          userId,
+          hookConfig,
+          promptContent,
+        }),
+      );
+    }
+    
+  } catch (error) {
+    logger.error(`[mcp-webhook:${server}/${hook}/process] Processing failed`, error);
+  }
+
+  
+
 }
 
 
@@ -95,6 +207,29 @@ function buildTargetWebhookUrl({ baseUrl, hook, query }) {
   return target.toString();
 }
 
+
+function buildTargetWebhookProcessUrl({ baseUrl, hook, query }) {
+  const urlObj = new URL(baseUrl);
+  // remove trailing /mcp if present  
+  urlObj.pathname = urlObj.pathname.replace(/\/?mcp\/?$/i, '/');
+  // ensure no trailing slash before appending
+  const basePath = urlObj.pathname.replace(/\/$/, '');
+  const target = new URL(`${urlObj.origin}${basePath}/webhooks/${encodeURIComponent(hook)}/process`);
+  // append query params from incoming request
+  if (query && typeof query === 'object') {
+    for (const [k, v] of Object.entries(query)) {
+      if (v == null) continue;
+      if (Array.isArray(v)) {
+        v.forEach((vv) => target.searchParams.append(k, String(vv)));
+      } else {
+        target.searchParams.set(k, String(v));
+      }
+    }
+  }
+  return target.toString();
+}
+
+
 function prepareProxyHeaders(incomingHeaders, extraHeaders, server) {
   const out = { ...incomingHeaders };
   // override/merge with configured headers last
@@ -153,71 +288,6 @@ router.all('/:server/:hook', async (req, res, next) => {
     const method = req.method.toUpperCase();
     const headers = prepareProxyHeaders(req.headers, serverConfig.headers, server);
 
-    
-    const user = await findUser({ email: hookConfig.user });
-    const userId = user?._id?.toString() || hookConfig.user;
-
-    // Inject x-mcp-authentication header using OAuth tokens for the configured user
-    try {
-      // TODO better way to first verify if a server has OAuth enabled?
-      // I don't trust serverConfig.oauth to be set correctly
-      // TODO this should flat out fail but send back success so we don't
-      // get spammed by webhook sender, just fast return 204
-      const flowsCache = getLogStores(CacheKeys.FLOWS);
-      const flowManager = getFlowStateManager(flowsCache);
-      
-      logger.info(`[mcp-webhook:${server}/${hook}/proxy] Getting user token for user ${userId}`);
-      
-      /** Refresh function for user-specific connections */
-      const refreshTokensFunction = async (
-        refreshToken,
-        metadata,
-      ) => {
-        /** URL from config since connection doesn't exist yet */
-        const serverUrl = serverConfig.url;
-        return await MCPOAuthHandler.refreshOAuthTokens(
-          refreshToken,
-          {
-            serverName: metadata.serverName,
-            serverUrl,
-            clientInfo: metadata.clientInfo,
-          },
-          serverConfig.oauth,
-        );
-      };
-
-      /** Flow state to prevent concurrent token operations */
-      const tokenFlowId = `tokens:${userId}:${server}`;
-      const tokens = await flowManager.createFlowWithHandler(
-        tokenFlowId,
-        'mcp_get_tokens',
-        async () => {
-          return await MCPTokenStorage.getTokens({
-            userId,
-            serverName: server,
-            findToken: findToken,
-            refreshTokens: refreshTokensFunction,
-            createToken: createToken,
-            updateToken: updateToken,
-            deleteTokens: deleteTokens,
-          });
-        },
-      );
-
-      if (tokens?.access_token) {
-        headers['x-mcp-authorization'] = `Bearer ${tokens.access_token}`;
-        logger.info(`[mcp-webhook:${server}/${hook}/proxy] OAuth tokens found for user ${userId} expires at ${tokens.expires_at} seconds`);
-      } else {
-        logger.warn(`[mcp-webhook:${server}/${hook}/proxy] No OAuth tokens found for user ${userId}`);
-        // res.set('Content-Type', 'text/plain');
-        // return res.status(204).send('No OAuth tokens found for user');
-      }      
-    } catch (authErr) {
-      logger.warn(`[mcp-webhook:${server}/${hook}/proxy] Failed to attach OAuth token header`, authErr);
-      // res.set('Content-Type', 'text/plain');
-      // return res.status(204).send('Failed to attach OAuth token header');
-    }
-
     let body;
     if (method !== 'GET' && method !== 'HEAD') {
       if (req.rawBody) {
@@ -261,29 +331,28 @@ router.all('/:server/:hook', async (req, res, next) => {
 
     const data = await response.json();
 
+
     // Prepare planned response (send after queueing)
     const responseCode = data.reqResponseCode;
     const responseContentType = data.reqResponseContentType === 'json' ? 'application/json' : 'text/plain';
     const responseContent = data.reqResponseContent;
-    const promptContent = data.promptContent;
-    logger.info(`[mcp-webhook:${server}/${hook}/proxy] Received 200 response: ${responseCode} (${responseContentType}) ${promptContent ? 'with prompt' : 'without prompt'}`);
-    // Enqueue prompt processing if present
-    if (promptContent) {
-      logger.info(
-        `[mcp-webhook:${server}/${hook}/proxy] Queueing prompt for user ${userId} (${hookConfig.user})`,
-      );
-      queue.add(() =>
-        processMCPWebhook({
-          req,
-          name: `${server}/${hook}`,
-          userId,
+    const processData = data.processData;
+    
+    logger.info(`[mcp-webhook:${server}/${hook}/proxy] Received 200 upstream response: ${responseContentType} ${responseCode}`);
+
+    if (processData) {
+      logger.info(`[mcp-webhook:${server}/${hook}/proxy] Queueing process for user ${userId} (${hookConfig.user})`);
+      processQueue.add(() =>
+        processWebhookData({
+          server,
+          hook,
           hookConfig,
-          promptContent,
+          serverConfig,
+          processData,
         }),
       );
     }
 
-    // Send response
     res.set('Content-Type', responseContentType);
     return res.status(responseCode).send(responseContent);
 
