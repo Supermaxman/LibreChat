@@ -69,7 +69,7 @@ const Thinking: React.ElementType = memo(({ content }: { content: string }) => {
 
   const label = useMemo(() => localize('com_ui_thoughts'), [localize]);
 
-  if (content == null) {
+  if (content === null || content === undefined || content === '') {
     return null;
   }
 
