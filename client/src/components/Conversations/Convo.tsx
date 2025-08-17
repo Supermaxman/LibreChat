@@ -153,13 +153,16 @@ export default function Conversation({
       )}
       role="listitem"
       tabIndex={0}
-      onClick={(e) => {
+      onPointerUp={(e) => {
         if (renaming) {
           return;
         }
-        if (e.button === 0) {
-          handleNavigation(e.ctrlKey || e.metaKey);
+        // For mouse, only handle left button; for touch/pen, always handle
+        const isMouse = e.pointerType === 'mouse';
+        if (isMouse && e.button !== 0) {
+          return;
         }
+        handleNavigation(e.ctrlKey || e.metaKey);
       }}
       onKeyDown={(e) => {
         if (renaming) {

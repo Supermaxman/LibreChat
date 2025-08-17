@@ -32,7 +32,13 @@ export const ThinkingContent: FC<{ content: string; isPart?: boolean }> = memo(
         <ReactMarkdown 
           className={CONTENT_STYLES.text}
           remarkPlugins={[remarkGfm, remarkBreaks]}
-          children={content?.replaceAll('\n', '  \n') ?? ''}
+          // First replace all newlines with two spaces to make sure newlines are preserved
+          // Then insert paragraph breaks before bold headers that follow sentence-ending punctuation (., !, ?)
+          children={
+            content
+              ?.replaceAll('\n', '  \n')
+              .replace(/([.!?])\s*\*\*/g, '$1\n\n**') ?? ''
+          }
         />
       </div>
     );
