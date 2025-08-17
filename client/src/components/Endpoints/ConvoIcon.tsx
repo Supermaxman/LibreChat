@@ -64,16 +64,18 @@ export default function ConvoIcon({
     <>
       {iconURL && iconURL.includes('http') ? (
         <div className={`relative inline-flex ${containerClassName}`}>
-          <ConvoIconURL
-            iconURL={iconURL}
-            modelLabel={conversation?.chatGptLabel ?? conversation?.modelLabel ?? ''}
-            endpointIconURL={endpointIconURL}
-            assistantAvatar={avatar}
-            assistantName={name}
-            agentAvatar={avatar}
-            agentName={name}
-            context={context}
-          />
+          <div className={running ? 'opacity-60 grayscale' : ''}>
+            <ConvoIconURL
+              iconURL={iconURL}
+              modelLabel={conversation?.chatGptLabel ?? conversation?.modelLabel ?? ''}
+              endpointIconURL={endpointIconURL}
+              assistantAvatar={avatar}
+              assistantName={name}
+              agentAvatar={avatar}
+              agentName={name}
+              context={context}
+            />
+          </div>
           {running && (
             <span className="absolute inset-0 flex items-center justify-center">
               <span className="h-full w-full rounded-full bg-black/10" />
@@ -83,18 +85,20 @@ export default function ConvoIcon({
         </div>
       ) : (
         <div className={`relative inline-flex ${containerClassName}`}>
-          {endpoint && Icon != null && (
-            <Icon
-              size={size}
-              context={context}
-              endpoint={endpoint}
-              className={className}
-              iconURL={endpointIconURL}
-              assistantName={name}
-              agentName={name}
-              avatar={avatar}
-            />
-          )}
+          <div className={running ? 'opacity-60 grayscale' : ''}>
+            {endpoint && Icon != null && (
+              <Icon
+                size={size}
+                context={context}
+                endpoint={endpoint}
+                className={className}
+                iconURL={endpointIconURL}
+                assistantName={name}
+                agentName={name}
+                avatar={avatar}
+              />
+            )}
+          </div>
           {running && (
             <span className="absolute inset-0 flex items-center justify-center">
               <span className="h-full w-full rounded-full bg-black/10" />

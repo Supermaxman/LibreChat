@@ -88,13 +88,27 @@ export const useAgentRunStatusQuery = (
     [QueryKeys.agent, 'runStatus', conversationId],
     () => dataService.getAgentRunStatus(conversationId as string),
     {
-      refetchInterval: 2000,
+      // Poll less frequently, pause when tab is hidden, and stop polling when not running.
+      // Add small jitter per convo to de-sync bursts across many icons.
+      refetchInterval: (data) => {
+        if (document.visibilityState !== 'visible') {
+          return false;
+        }
+        if (!data?.running) {
+          return false;
+        }
+        const id = (conversationId as string) || '';
+        let sum = 0;
+        for (let i = 0; i < id.length; i++) sum = (sum + id.charCodeAt(i)) % 100000;
+        const jitter = sum % 3000; // 0-2999ms
+        return 10000 + jitter; // 10-13s
+      },
       refetchOnWindowFocus: true,
+      refetchIntervalInBackground: false,
       refetchOnReconnect: true,
-      refetchOnMount: false,
       retry: false,
       enabled,
-      staleTime: 1000,
+      staleTime: 10000,
       ...config,
     },
   );
