@@ -121,7 +121,6 @@ async function processWebhookData({ server, hook, hookConfig, serverConfig, proc
       );
       promptQueue.add(() =>
         processMCPWebhook({
-          req,
           name: `${server}/${hook}`,
           userId,
           hookConfig,
@@ -139,13 +138,13 @@ async function processWebhookData({ server, hook, hookConfig, serverConfig, proc
 }
 
 
-async function processMCPWebhook({ req, name, userId, hookConfig, promptContent }) {
+async function processMCPWebhook({ name, userId, hookConfig, promptContent }) {
   try {
     logger.info(`[mcp-webhook:${name}/prompt] Starting prompt for user ${userId}`);
     const prefix = hookConfig.prompt ? `${hookConfig.prompt}\n\n` : '';
     const text = `${prefix}${promptContent ?? ''}`;
 
-    const agentReq = req;
+    const agentReq = {};
     agentReq.user = { id: userId };
     // Mark webhook-initiated chats as Automated for auto-tagging
     agentReq.originTag = 'Automated';
@@ -265,6 +264,8 @@ function resolveHookConfigDeep(input) {
 
 // Dynamic MCP webhook proxy: /api/webhooks/:server/:hook
 router.all('/:server/:hook', async (req, res, next) => {
+  // start timer
+  const startTime = Date.now();
   const { server, hook } = req.params;
   logger.info(`[mcp-webhook:${server}/${hook}/proxy] Starting proxy`);
   const config = await getCustomConfig();
@@ -352,6 +353,10 @@ router.all('/:server/:hook', async (req, res, next) => {
         }),
       );
     }
+
+    // log time taken as seconds rounded to 2 decimal places
+    const timeTaken = (Date.now() - startTime) / 1000;
+    logger.info(`[mcp-webhook:${server}/${hook}/proxy] Processed in ${timeTaken.toFixed(2)}s`);
 
     res.set('Content-Type', responseContentType);
     return res.status(responseCode).send(responseContent);
