@@ -8,6 +8,7 @@ interface ConvoLinkProps {
   isSmallScreen: boolean;
   localize: (key: any, options?: any) => string;
   children: React.ReactNode;
+  isRunning?: boolean;
 }
 
 const ConvoLink: React.FC<ConvoLinkProps> = ({
@@ -17,6 +18,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
   isSmallScreen,
   localize,
   children,
+  isRunning = false,
 }) => {
   return (
     <div
@@ -30,7 +32,10 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
     >
       {children}
       <div
-        className="relative flex-1 grow overflow-hidden whitespace-nowrap"
+        className={cn(
+          'relative flex-1 grow overflow-hidden whitespace-nowrap',
+          isRunning ? 'opacity-70 animate-pulse' : '',
+        )}
         style={{ textOverflow: 'clip' }}
         onDoubleClick={(e) => {
           if (isSmallScreen) {
@@ -50,7 +55,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
           'absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l',
           isActiveConvo
             ? 'from-surface-active-alt'
-            : 'from-surface-primary-alt from-0% to-transparent group-hover:from-surface-active-alt group-hover:from-40%',
+            : 'from-surface-primary-alt from-0% to-transparent group-hover:from-surface-active-alt group-hover:from-40%'
         )}
         aria-hidden="true"
       />

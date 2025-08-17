@@ -7,6 +7,7 @@ import type { TConversation } from 'librechat-data-provider';
 import { useUpdateConversationMutation } from '~/data-provider';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useNavigateToConvo, useLocalize } from '~/hooks';
+import { useAgentRunStatusQuery } from '~/data-provider/Agents/queries';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { ConvoOptions } from './ConvoOptions';
@@ -41,6 +42,13 @@ export default function Conversation({
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { conversationId, title = '' } = conversation;
+  // Agent run status for visual feedback
+  const showRunStatus = conversation?.endpoint === 'agents' && !!conversation?.conversationId;
+  const { data: status } = useAgentRunStatusQuery(
+    showRunStatus ? (conversation?.conversationId as string) : undefined,
+    { enabled: showRunStatus },
+  );
+  const isRunning = !!status?.running;
 
   const [titleInput, setTitleInput] = useState(title || '');
   const [renaming, setRenaming] = useState(false);
@@ -179,6 +187,7 @@ export default function Conversation({
           onRename={handleRename}
           isSmallScreen={isSmallScreen}
           localize={localize}
+          isRunning={isRunning}
         >
           <ConvoIcon
             conversation={conversation}
@@ -189,6 +198,7 @@ export default function Conversation({
             className="h-full w-full"
             size={20}
             context="menu-item"
+            isRunning={isRunning}
           />
         </ConvoLink>
       )}

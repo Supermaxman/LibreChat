@@ -3,7 +3,7 @@ import type * as t from 'librechat-data-provider';
 import { getEndpointField, getIconKey, getEntity, getIconEndpoint } from '~/utils';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { icons } from '~/hooks/Endpoint/Icons';
-import { useAgentRunStatusQuery } from '~/data-provider/Agents/queries';
+
 
 export default function ConvoIcon({
   conversation,
@@ -14,6 +14,7 @@ export default function ConvoIcon({
   containerClassName = '',
   context,
   size,
+  isRunning = false,
 }: {
   conversation: t.TConversation | t.TPreset | null;
   endpointsConfig: t.TEndpointsConfig;
@@ -23,6 +24,7 @@ export default function ConvoIcon({
   context?: 'message' | 'nav' | 'landing' | 'menu-item';
   className?: string;
   size?: number;
+  isRunning?: boolean;
 }) {
   const iconURL = conversation?.iconURL ?? '';
   let endpoint = conversation?.endpoint;
@@ -49,22 +51,11 @@ export default function ConvoIcon({
   const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });
   const Icon = icons[iconKey] ?? null;
 
-  // Poll running status only for agents conversations
-  const showRunStatus = endpoint === 'agents' && !!conversation?.conversationId;
-  const { data: status } = useAgentRunStatusQuery(
-    showRunStatus ? (conversation?.conversationId as string) : undefined,
-    {
-      enabled: showRunStatus,
-    },
-  );
-
-  const running = !!status?.running;
-
   return (
     <>
       {iconURL && iconURL.includes('http') ? (
         <div className={`relative inline-flex ${containerClassName}`}>
-          <div className={running ? 'opacity-60 grayscale' : ''}>
+          <div className={isRunning ? 'opacity-60 grayscale' : ''}>
             <ConvoIconURL
               iconURL={iconURL}
               modelLabel={conversation?.chatGptLabel ?? conversation?.modelLabel ?? ''}
@@ -76,7 +67,7 @@ export default function ConvoIcon({
               context={context}
             />
           </div>
-          {running && (
+          {isRunning && (
             <span className="absolute inset-0 flex items-center justify-center">
               <span className="h-full w-full rounded-full bg-black/10" />
               <span className="absolute h-4 w-4 animate-spin rounded-full border-2 border-white/80 border-t-transparent" />
@@ -85,7 +76,7 @@ export default function ConvoIcon({
         </div>
       ) : (
         <div className={`relative inline-flex ${containerClassName}`}>
-          <div className={running ? 'opacity-60 grayscale' : ''}>
+          <div className={isRunning ? 'opacity-60 grayscale' : ''}>
             {endpoint && Icon != null && (
               <Icon
                 size={size}
@@ -99,7 +90,7 @@ export default function ConvoIcon({
               />
             )}
           </div>
-          {running && (
+          {isRunning && (
             <span className="absolute inset-0 flex items-center justify-center">
               <span className="h-full w-full rounded-full bg-black/10" />
               <span className="absolute h-4 w-4 animate-spin rounded-full border-2 border-white/80 border-t-transparent" />
