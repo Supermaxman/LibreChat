@@ -2,7 +2,7 @@ import { useState, useMemo, memo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 // TODO consider this for better breaking for thoughts
-// import remarkBreaks from 'remark-breaks';
+import remarkBreaks from 'remark-breaks';
 import { useRecoilValue } from 'recoil';
 import { Atom, ChevronDown } from 'lucide-react';
 import type { MouseEvent, FC } from 'react';
@@ -21,18 +21,22 @@ const CONTENT_STYLES = {
     'absolute left-0 h-[calc(100%-10px)] border-l-2 border-border-medium dark:border-border-heavy',
   partBorder:
     'absolute left-0 h-[calc(100%)] border-l-2 border-border-medium dark:border-border-heavy',
-  text: 'markdown prose dark:prose-invert light whitespace-pre-wrap break-words leading-[26px]',
+  text: 'markdown prose dark:prose-invert light break-words leading-[26px]',
 } as const;
 
-export const ThinkingContent: FC<{ children: string; isPart?: boolean }> = memo(
-  ({ isPart, children }) => (
-    <div className={CONTENT_STYLES.wrapper}>
-      <div className={isPart === true ? CONTENT_STYLES.partBorder : CONTENT_STYLES.border} />
-      <div className={CONTENT_STYLES.text}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
+export const ThinkingContent: FC<{ content: string; isPart?: boolean }> = memo(
+  ({ isPart, content }) => {
+    return (
+      <div className={CONTENT_STYLES.wrapper}>
+        <div className={isPart === true ? CONTENT_STYLES.partBorder : CONTENT_STYLES.border} />
+        <ReactMarkdown 
+          className={CONTENT_STYLES.text}
+          remarkPlugins={[remarkGfm, remarkBreaks]}
+          children={content.replaceAll('\n', '  \n')}
+        />
       </div>
-    </div>
-  ),
+    );
+  },
 );
 
 export const ThinkingButton = memo(
@@ -53,7 +57,7 @@ export const ThinkingButton = memo(
   ),
 );
 
-const Thinking: React.ElementType = memo(({ children }: { children: React.ReactNode }) => {
+const Thinking: React.ElementType = memo(({ content }: { content: string }) => {
   const localize = useLocalize();
   const showThinking = useRecoilValue<boolean>(store.showThinking);
   const [isExpanded, setIsExpanded] = useState(showThinking);
@@ -65,7 +69,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
 
   const label = useMemo(() => localize('com_ui_thoughts'), [localize]);
 
-  if (children == null) {
+  if (content == null) {
     return null;
   }
 
@@ -81,7 +85,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
         }}
       >
         <div className="overflow-hidden">
-          <ThinkingContent isPart={true}>{children}</ThinkingContent>
+          <ThinkingContent isPart={true} content={content}/>
         </div>
       </div>
     </>
