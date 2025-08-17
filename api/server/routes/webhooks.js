@@ -28,7 +28,7 @@ function resolveEnvValue(value, name, keyPath) {
 }
 
 
-async function processWebhookData({ server, hook, hookConfig, serverConfig, processData }) {
+async function processWebhookData({ req, server, hook, hookConfig, serverConfig, processData }) {
   try {
     const user = await findUser({ email: hookConfig.user });
     const userId = user?._id?.toString() || hookConfig.user;
@@ -121,6 +121,7 @@ async function processWebhookData({ server, hook, hookConfig, serverConfig, proc
       );
       promptQueue.add(() =>
         processMCPWebhook({
+          req,
           name: `${server}/${hook}`,
           userId,
           hookConfig,
@@ -138,15 +139,14 @@ async function processWebhookData({ server, hook, hookConfig, serverConfig, proc
 }
 
 
-async function processMCPWebhook({ name, userId, hookConfig, promptContent }) {
+async function processMCPWebhook({ req, name, userId, hookConfig, promptContent }) {
   try {
     logger.info(`[mcp-webhook:${name}/prompt] Starting prompt for user ${userId}`);
     const prefix = hookConfig.prompt ? `${hookConfig.prompt}\n\n` : '';
     const text = `${prefix}${promptContent ?? ''}`;
 
-    const agentReq = {};
+    const agentReq = req;
     agentReq.user = { id: userId };
-    agentReq.app = { locals: {} };
     // Mark webhook-initiated chats as Automated for auto-tagging
     agentReq.originTag = 'Automated';
     agentReq.body = {
@@ -346,6 +346,7 @@ router.all('/:server/:hook', async (req, res, next) => {
       logger.info(`[mcp-webhook:${server}/${hook}/proxy] Queueing process for user ${hookConfig.user}`);
       processQueue.add(() =>
         processWebhookData({
+          req,
           server,
           hook,
           hookConfig,
