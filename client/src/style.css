@@ -60,6 +60,7 @@
   --font-size-base: 1rem;
   --font-size-lg: 1.125rem;
   --font-size-xl: 1.25rem;
+  --markdown-font-size: 1rem;
 }
 html {
   --brand-purple: #ab68ff;
@@ -124,37 +125,37 @@ html {
 }
 .dark {
   --brand-purple: #ab68ff;
-  --presentation: var(--gray-800);
+  --presentation: var(--gray-900);
   --text-primary: var(--gray-100);
   --text-secondary: var(--gray-300);
   --text-secondary-alt: var(--gray-400);
   --text-tertiary: var(--gray-500);
   --text-warning: var(--amber-500);
-  --header-primary: var(--gray-700);
-  --header-hover: var(--gray-600);
-  --header-button-hover: var(--gray-700);
-  --surface-active: var(--gray-500);
-  --surface-active-alt: var(--gray-700);
-  --surface-hover: var(--gray-600);
-  --surface-hover-alt: var(--gray-600);
+  --header-primary: var(--gray-800);
+  --header-hover: var(--gray-700);
+  --header-button-hover: var(--gray-800);
+  --surface-active: var(--gray-600);
+  --surface-active-alt: var(--gray-800);
+  --surface-hover: var(--gray-700);
+  --surface-hover-alt: var(--gray-700);
   --surface-primary: var(--gray-900);
-  --surface-primary-alt: var(--gray-850);
-  --surface-primary-contrast: var(--gray-850);
-  --surface-secondary: var(--gray-800);
-  --surface-secondary-alt: var(--gray-800);
-  --surface-tertiary: var(--gray-700);
-  --surface-tertiary-alt: var(--gray-700);
-  --surface-dialog: var(--gray-850);
+  --surface-primary-alt: var(--gray-900);
+  --surface-primary-contrast: var(--gray-900);
+  --surface-secondary: var(--gray-850);
+  --surface-secondary-alt: var(--gray-850);
+  --surface-tertiary: var(--gray-800);
+  --surface-tertiary-alt: var(--gray-800);
+  --surface-dialog: var(--gray-900);
   --surface-submit: var(--green-700);
   --surface-submit-hover: var(--green-800);
   --surface-destructive: var(--red-800);
   --surface-destructive-hover: var(--red-900);
-  --surface-chat: var(--gray-700);
-  --border-light: var(--gray-700);
-  --border-medium-alt: var(--gray-600);
-  --border-medium: var(--gray-600);
-  --border-heavy: var(--gray-500);
-  --border-xheavy: var(--gray-400);
+  --surface-chat: var(--gray-800);
+  --border-light: var(--gray-800);
+  --border-medium-alt: var(--gray-700);
+  --border-medium: var(--gray-700);
+  --border-heavy: var(--gray-600);
+  --border-xheavy: var(--gray-500);
   /* These are test styles */
 
   --background: 0 0% 7%;
@@ -198,8 +199,8 @@ html {
   --text-secondary: var(--gray-300);
   --text-tertiary: var(--gizmo-gray-500);
   --surface-primary: var(--gray-900);
-  --surface-secondary: var(--gray-800);
-  --surface-tertiary: var(--gray-700);
+  --surface-secondary: var(--gray-850);
+  --surface-tertiary: var(--gray-800);
   --border-light: rgba(217, 217, 227, 0.1);
   --border-medium: rgba(217, 217, 227, 0.15);
   --border-heavy: rgba(217, 217, 227, 0.2);
