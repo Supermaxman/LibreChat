@@ -29,6 +29,7 @@ function resolveEnvValue(value, name, keyPath) {
 
 
 async function processWebhookData({ req, server, hook, hookConfig, serverConfig, processData }) {
+  const startTime = Date.now();
   try {
     const user = await findUser({ email: hookConfig.user });
     const userId = user?._id?.toString() || hookConfig.user;
@@ -120,7 +121,7 @@ async function processWebhookData({ req, server, hook, hookConfig, serverConfig,
         `[mcp-webhook:${server}/${hook}/process] Queueing prompt for user ${userId} (${hookConfig.user})`,
       );
       promptQueue.add(() =>
-        processMCPWebhook({
+        promptWebhook({
           req,
           name: `${server}/${hook}`,
           userId,
@@ -130,16 +131,17 @@ async function processWebhookData({ req, server, hook, hookConfig, serverConfig,
       );
     }
     
+    const timeTaken = (Date.now() - startTime) / 1000;
+    logger.info(`[mcp-webhook:${server}/${hook}/process] Processed in ${timeTaken.toFixed(2)}s`);
+
   } catch (error) {
     logger.error(`[mcp-webhook:${server}/${hook}/process] Processing failed`, error);
   }
-
-  
-
 }
 
 
-async function processMCPWebhook({ req, name, userId, hookConfig, promptContent }) {
+async function promptWebhook({ req, name, userId, hookConfig, promptContent }) {
+  const startTime = Date.now();
   try {
     logger.info(`[mcp-webhook:${name}/prompt] Starting prompt for user ${userId}`);
     const prefix = hookConfig.prompt ? `${hookConfig.prompt}\n\n` : '';
@@ -180,9 +182,11 @@ async function processMCPWebhook({ req, name, userId, hookConfig, promptContent 
     dummyRes.removeListener = () => {};
 
     await AgentController(agentReq, dummyRes, () => {}, initializeClient, addTitle);
-    logger.info(`[mcp-webhook:${name}/prompt] Processed prompt for user ${userId}`);
+    logger.info(`[mcp-webhook:${name}/prompt] Prompt processed for user ${userId}`);
+    const timeTaken = (Date.now() - startTime) / 1000;
+    logger.info(`[mcp-webhook:${name}/prompt] Prompt processed in ${timeTaken.toFixed(2)}s`);
   } catch (error) {
-    logger.error(`[mcp-webhook:${name}/prompt] Processing failed`, error);
+    logger.error(`[mcp-webhook:${name}/prompt] Prompt processing failed`, error);
   }
 }
 
