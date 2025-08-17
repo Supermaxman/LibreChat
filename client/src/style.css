@@ -139,10 +139,10 @@ html {
   --surface-hover: var(--gray-700);
   --surface-hover-alt: var(--gray-700);
   --surface-primary: var(--gray-850);
-  --surface-primary-alt: var(--gray-850);
+  --surface-primary-alt: var(--gray-900);
   --surface-primary-contrast: var(--gray-850);
   --surface-secondary: var(--gray-850);
-  --surface-secondary-alt: var(--gray-850);
+  --surface-secondary-alt: var(--gray-900);
   --surface-tertiary: var(--gray-800);
   --surface-tertiary-alt: var(--gray-800);
   --surface-dialog: var(--gray-850);
