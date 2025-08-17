@@ -23,6 +23,7 @@ const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const initializeJobs = require('./services/initializeJobs');
 
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
@@ -163,6 +164,12 @@ const startServer = async () => {
     } catch (err) {
       // Non-fatal
       logger.error('Failed to initialize user-scoped MCPs', err);
+    }
+    // Initialize scheduled jobs after app is ready
+    try {
+      initializeJobs(app);
+    } catch (err) {
+      logger.error('Failed to initialize jobs', err);
     }
   });
 };

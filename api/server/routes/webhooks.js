@@ -76,7 +76,7 @@ async function processMCPWebhook({ req, name, userId, hookConfig, promptContent 
 
 function buildTargetWebhookUrl({ baseUrl, hook, query }) {
   const urlObj = new URL(baseUrl);
-  // remove trailing /mcp if present
+  // remove trailing /mcp if present  
   urlObj.pathname = urlObj.pathname.replace(/\/?mcp\/?$/i, '/');
   // ensure no trailing slash before appending
   const basePath = urlObj.pathname.replace(/\/$/, '');
