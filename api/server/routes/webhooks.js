@@ -100,7 +100,7 @@ async function processWebhookData({ server, hook, hookConfig, serverConfig, proc
     const response = await fetch(processUrl, {
       method: 'POST',
       headers,
-      body: processData,
+      body: JSON.stringify(processData),
       signal: controller.signal,
     });
     clearTimeout(timer);
