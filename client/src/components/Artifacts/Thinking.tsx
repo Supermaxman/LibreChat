@@ -25,14 +25,14 @@ const CONTENT_STYLES = {
 } as const;
 
 export const ThinkingContent: FC<{ content: string; isPart?: boolean }> = memo(
-  ({ isPart, content }) => {
+  ({ content, isPart }) => {
     return (
       <div className={CONTENT_STYLES.wrapper}>
         <div className={isPart === true ? CONTENT_STYLES.partBorder : CONTENT_STYLES.border} />
         <ReactMarkdown 
           className={CONTENT_STYLES.text}
           remarkPlugins={[remarkGfm, remarkBreaks]}
-          children={content.replaceAll('\n', '  \n')}
+          children={content?.replaceAll('\n', '  \n') ?? ''}
         />
       </div>
     );
@@ -57,7 +57,7 @@ export const ThinkingButton = memo(
   ),
 );
 
-const Thinking: React.ElementType = memo(({ content }: { content: string }) => {
+const Thinking: React.ElementType = memo(({ content }: { content?: string | null }) => {
   const localize = useLocalize();
   const showThinking = useRecoilValue<boolean>(store.showThinking);
   const [isExpanded, setIsExpanded] = useState(showThinking);
@@ -85,7 +85,7 @@ const Thinking: React.ElementType = memo(({ content }: { content: string }) => {
         }}
       >
         <div className="overflow-hidden">
-          <ThinkingContent isPart={true} content={content}/>
+          <ThinkingContent content={content} isPart />
         </div>
       </div>
     </>
