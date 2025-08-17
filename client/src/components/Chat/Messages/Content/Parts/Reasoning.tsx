@@ -32,7 +32,7 @@ const Reasoning = memo(({ reasoning }: ReasoningProps) => {
       }}
     >
       <div className="overflow-hidden">
-        <ThinkingContent isPart={true}>{reasoningText}</ThinkingContent>
+        <ThinkingContent content={reasoningText} isPart />
       </div>
     </div>
   );
