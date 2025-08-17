@@ -341,7 +341,7 @@ router.all('/:server/:hook', async (req, res, next) => {
     logger.info(`[mcp-webhook:${server}/${hook}/proxy] Received 200 upstream response: ${responseContentType} ${responseCode}`);
 
     if (processData) {
-      logger.info(`[mcp-webhook:${server}/${hook}/proxy] Queueing process for user ${userId} (${hookConfig.user})`);
+      logger.info(`[mcp-webhook:${server}/${hook}/proxy] Queueing process for user ${hookConfig.user}`);
       processQueue.add(() =>
         processWebhookData({
           server,
