@@ -2,6 +2,7 @@ import { QueryKeys, dataService, EModelEndpoint, defaultOrderQuery } from 'libre
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
+import { useMemo } from 'react';
 
 /**
  * AGENTS
@@ -76,6 +77,18 @@ export const useGetAgentByIdQuery = (
   );
 };
 
+const BASE_REFETCH_INTERVAL = 5000;
+const calculateJitter = (conversationId?: string | null) => {
+  if (!conversationId) {
+    return 0;
+  }
+  let sum = 0;
+  for (let i = 0; i < conversationId.length; i++) {
+    sum = (sum + conversationId.charCodeAt(i)) % 100000;
+  }
+  return sum % 1000;
+};
+
 /**
  * Hook: Agent run status by conversationId
  */
@@ -84,6 +97,7 @@ export const useAgentRunStatusQuery = (
   config?: UseQueryOptions<{ running: boolean }>,
 ): QueryObserverResult<{ running: boolean }> => {
   const enabled = typeof conversationId === 'string' && !!conversationId;
+  const jitter = useMemo(() => calculateJitter(conversationId), [conversationId]);
   return useQuery<{ running: boolean }>(
     [QueryKeys.agent, 'runStatus', conversationId],
     () => dataService.getAgentRunStatus(conversationId as string),
@@ -94,14 +108,11 @@ export const useAgentRunStatusQuery = (
         if (document.visibilityState !== 'visible') {
           return false;
         }
+        // if not running, wait 2x longer to check again
         if (!data?.running) {
-          return false;
+          return 2 * BASE_REFETCH_INTERVAL + jitter;
         }
-        const id = (conversationId as string) || '';
-        let sum = 0;
-        for (let i = 0; i < id.length; i++) sum = (sum + id.charCodeAt(i)) % 100000;
-        const jitter = sum % 3000; // 0-2999ms
-        return 10000 + jitter; // 10-13s
+        return BASE_REFETCH_INTERVAL + jitter;
       },
       refetchOnWindowFocus: true,
       refetchIntervalInBackground: false,
