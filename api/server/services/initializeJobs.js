@@ -31,7 +31,7 @@ function resolveConfigDeep(input) {
   return input;
 }
 
-async function runScheduledJob({ jobName, userId, agent_id, prompt }) {
+async function runScheduledJob({ jobName, userId, agent_id, prompt, appLocals }) {
   try {
     logger.info(`[jobs:${jobName}] Running for user ${userId} - agent ${agent_id}`);
 
@@ -40,7 +40,8 @@ async function runScheduledJob({ jobName, userId, agent_id, prompt }) {
     /** @type {any} */
     const req = {};
     req.user = { id: userId };
-    req.originTag = 'Scheduled';
+    req.app = { locals: appLocals || {} };
+    req.originTag = 'Automated';
     req.body = {
       text,
       endpoint: EModelEndpoint.agents,
@@ -79,6 +80,7 @@ async function runScheduledJob({ jobName, userId, agent_id, prompt }) {
  * @param {import('express').Application} _app
  */
 async function initializeJobs(_app) {
+  const appLocals = _app?.locals ?? {};
   const config = await getCustomConfig();
   const jobs = resolveConfigDeep(config?.jobs || {});
   const names = Object.keys(jobs);
@@ -119,6 +121,7 @@ async function initializeJobs(_app) {
           userId,
           agent_id: job.agent_id,
           prompt: job.prompt,
+          appLocals,
         }),
       );
 
