@@ -462,6 +462,10 @@ export const revertAgentVersion = ({
   version_index: number;
 }): Promise<a.Agent> => request.post(endpoints.revertAgentVersion(agent_id), { version_index });
 
+export const getAgentRunStatus = (conversationId: string): Promise<{ running: boolean }> => {
+  return request.get(endpoints.agentRunStatus(conversationId));
+};
+
 /* Tools */
 
 export const getAvailableAgentTools = (): Promise<s.TPlugin[]> => {

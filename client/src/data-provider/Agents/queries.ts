@@ -75,3 +75,27 @@ export const useGetAgentByIdQuery = (
     },
   );
 };
+
+/**
+ * Hook: Agent run status by conversationId
+ */
+export const useAgentRunStatusQuery = (
+  conversationId?: string | null,
+  config?: UseQueryOptions<{ running: boolean }>,
+): QueryObserverResult<{ running: boolean }> => {
+  const enabled = typeof conversationId === 'string' && !!conversationId;
+  return useQuery<{ running: boolean }>(
+    [QueryKeys.agent, 'runStatus', conversationId],
+    () => dataService.getAgentRunStatus(conversationId as string),
+    {
+      refetchInterval: 2000,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: false,
+      retry: false,
+      enabled,
+      staleTime: 1000,
+      ...config,
+    },
+  );
+};

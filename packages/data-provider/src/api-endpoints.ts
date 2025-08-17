@@ -199,6 +199,9 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
 
 export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
 
+export const agentRunStatus = (conversationId: string) =>
+  `${agents({ path: `status/${conversationId}` })}`;
+
 export const files = () => '/api/files';
 export const fileUpload = () => '/api/files';
 export const fileDelete = () => '/api/files';
