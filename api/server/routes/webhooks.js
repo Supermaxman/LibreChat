@@ -146,6 +146,7 @@ async function processMCPWebhook({ name, userId, hookConfig, promptContent }) {
 
     const agentReq = {};
     agentReq.user = { id: userId };
+    agentReq.app = { locals: {} };
     // Mark webhook-initiated chats as Automated for auto-tagging
     agentReq.originTag = 'Automated';
     agentReq.body = {
