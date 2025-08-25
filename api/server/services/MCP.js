@@ -16,6 +16,8 @@ const { getCachedTools, loadCustomConfig } = require('./Config');
 const {
   loadHistory,
   evaluatePlaceholders,
+  buildRuntimeEntry,
+  addRuntimeEntry,
 } = require('./MCPJsonPath');
 const { getLogStores } = require('~/cache');
 
@@ -184,7 +186,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
             `[MCP][User: ${userId}][${serverName}] Missing conversationId in tool config; JSONPath history will use empty context for "${toolName}"`,
           );
         } else {
-          const r = await loadHistory(conversationId);
+          const r = await loadHistory(conversationId, req);
           toolArguments = evaluatePlaceholders(toolArguments, { r });
         }
       } catch (preErr) {
@@ -213,6 +215,20 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         oauthStart,
         oauthEnd,
       });
+
+      // 1b) Add runtime entry for this tool result so subsequent steps see it
+      try {
+        const conversationId =
+          config?.metadata?.thread_id || config?.configurable?.thread_id || req?.body?.thread_id || req?.body?.conversationId;
+        if (conversationId) {
+          const entry = buildRuntimeEntry({ name: toolName, server: serverName, args: toolArguments, result });
+          addRuntimeEntry(req, conversationId, entry);
+        }
+      } catch (runtimeErr) {
+        logger.warn(
+          `[MCP][User: ${userId}][${serverName}] Failed to add runtime MCP JSONPath entry for "${toolName}": ${runtimeErr?.message}`,
+        );
+      }
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
         return result[0];

@@ -55,10 +55,15 @@ function buildEntriesFromMessages(messages) {
     return [];
   }
   const entries = [];
-  for (const msg of messages) {
+  for (let idx = 0; idx < messages.length; idx++) {
+    const msg = messages[idx];
     const time = new Date(msg.createdAt || Date.now()).getTime();
     const messageId = msg.messageId;
     const role = msg.sender;
+
+    let included = false;
+    let parsedTextJson = false;
+    let codeBlockCount = 0;
 
     // 1) Whole-message or aggregated text JSON
     let text = '';
@@ -74,28 +79,58 @@ function buildEntriesFromMessages(messages) {
       const parsed = tryParseJson(text);
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         entries.push({ text, json: parsed, time, messageId, role });
+        included = true;
+        parsedTextJson = true;
+        try {
+          logger.info(
+            `[MCP-JSONPATH] + Persisted message idx=${idx} id=${messageId} role=${role} -> added text JSON with keys=${Object.keys(parsed).slice(0, 20).join(',')}`,
+          );
+        } catch (_) {}
       }
     }
 
     // 2) Explicit JSON code blocks from message.text
     if (typeof msg?.text === 'string' && msg.text) {
       const blocks = extractJsonCodeBlocks(msg.text);
-      for (const obj of blocks) {
+      codeBlockCount += blocks.length;
+      for (let b = 0; b < blocks.length; b++) {
+        const obj = blocks[b];
         entries.push({ text: '```json\n...\n```', json: obj, time, messageId, role });
+        included = true;
+        try {
+          logger.info(
+            `[MCP-JSONPATH] + Persisted message idx=${idx} id=${messageId} role=${role} -> added code-block JSON #${b} keys=${Object.keys(obj).slice(0, 20).join(',')}`,
+          );
+        } catch (_) {}
       }
     }
 
     // 3) Explicit JSON code blocks from each content text part (in order)
     if (Array.isArray(msg?.content) && msg.content.length) {
-      for (const part of msg.content) {
+      for (let p = 0; p < msg.content.length; p++) {
+        const part = msg.content[p];
         if (!part || part.type !== 'text' || typeof part.text !== 'string') {
           continue;
         }
         const blocks = extractJsonCodeBlocks(part.text);
-        for (const obj of blocks) {
+        codeBlockCount += blocks.length;
+        for (let b = 0; b < blocks.length; b++) {
+          const obj = blocks[b];
           entries.push({ text: '```json\n...\n```', json: obj, time, messageId, role });
+          included = true;
+          try {
+            logger.info(
+              `[MCP-JSONPATH] + Persisted message idx=${idx} id=${messageId} role=${role} -> added content-block JSON part=${p} #${b} keys=${Object.keys(obj).slice(0, 20).join(',')}`,
+            );
+          } catch (_) {}
         }
       }
+    }
+
+    if (!included) {
+      logger.info(
+        `[MCP-JSONPATH] - Skipped message idx=${idx} id=${messageId} role=${role} (no valid JSON found; codeBlocks=${codeBlockCount}, parsedText=${parsedTextJson})`,
+      );
     }
   }
   return entries;
@@ -123,7 +158,6 @@ async function loadHistory(conversationId) {
   }
 }
 
-
 /**
  * Best-effort JSON parse helper for message/tool text.
  * @param {string} text
@@ -149,7 +183,6 @@ function tryParseJson(text) {
   return null;
 }
 
-
 /**
  * Build the JSONPath root array from REntry[] by selecting only valid JSON objects.
  * @param {REntry[]} entries
@@ -161,6 +194,9 @@ function buildJsonRoot(entries) {
     .map((e) => (e && e.json && typeof e.json === 'object' && !Array.isArray(e.json) ? e.json : null))
     .filter(Boolean);
   logger.info(`[MCP-JSONPATH] Built JSON root array with length=${jsons.length}`);
+  try {
+    logger.info(`[MCP-JSONPATH] Context JSON dump: ${JSON.stringify(jsons)}`);
+  } catch (_) {}
   return jsons;
 }
 
