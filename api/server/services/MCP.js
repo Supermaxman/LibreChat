@@ -13,6 +13,10 @@ const {
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getCachedTools, loadCustomConfig } = require('./Config');
+const {
+  loadHistory,
+  evaluatePlaceholders,
+} = require('./MCPJsonPath');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -170,6 +174,24 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
 
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+
+      // 1) Preprocess arguments with JSONPath placeholder evaluation
+      try {
+        const conversationId =
+          config?.metadata?.thread_id || config?.configurable?.thread_id || req?.body?.thread_id || req?.body?.conversationId;
+        if (!conversationId) {
+          logger.warn(
+            `[MCP][User: ${userId}][${serverName}] Missing conversationId in tool config; JSONPath history will use empty context for "${toolName}"`,
+          );
+        } else {
+          const r = await loadHistory(conversationId);
+          toolArguments = evaluatePlaceholders(toolArguments, { r });
+        }
+      } catch (preErr) {
+        logger.warn(
+          `[MCP][User: ${userId}][${serverName}] JSONPath preprocessing failed for "${toolName}": ${preErr?.message}`,
+        );
+      }
 
       const result = await mcpManager.callTool({
         serverName,

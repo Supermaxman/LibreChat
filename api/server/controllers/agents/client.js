@@ -353,7 +353,14 @@ class AgentClient extends BaseClient {
       try {
         const mcpInstructions = getMCPManager().formatInstructionsForContext(mcpServers);
         if (mcpInstructions) {
-          systemContent = [systemContent, mcpInstructions].filter(Boolean).join('\n\n');
+          const jsonPipeGuide =
+            'Note: You can reference previous MCP tool outputs using JSONPath placeholders with `$` as the root array of prior JSON objects. Examples:\n' +
+            '- `${{ $[-1] }}` → last tool output object\n' +
+            '- `${{ $[-1].id }}` → last tool output id\n' +
+            '- `${{ $[0].items[2].name }}` → nested access\n' +
+            'Singleton behavior: single-index queries like `$[-1]` return the object/value, not an array.\n' +
+            'Escaping: use `\\${{` for literal `${{` and `\\$` for literal `$`. If a placeholder is the entire value, its native type is passed; otherwise it is string-interpolated.';
+          systemContent = [systemContent, mcpInstructions, jsonPipeGuide].filter(Boolean).join('\n\n');
           logger.debug('[AgentClient] Injected MCP instructions for servers:', mcpServers);
         }
       } catch (error) {
