@@ -48,6 +48,7 @@ const namespaces = {
     CacheKeys.OPENID_EXCHANGED_TOKENS,
     Time.TEN_MINUTES,
   ),
+  [CacheKeys.MCP_JSONPIPE_RUNTIME]: standardCache(CacheKeys.MCP_JSONPIPE_RUNTIME, Time.ONE_MINUTE * 5),
 };
 
 /**

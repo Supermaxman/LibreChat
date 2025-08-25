@@ -16,8 +16,7 @@ const { getCachedTools, loadCustomConfig } = require('./Config');
 const {
   loadHistory,
   evaluatePlaceholders,
-  buildRuntimeEntry,
-  addRuntimeEntry,
+  addRuntimeCachedEntry,
 } = require('./MCPJsonPath');
 const { getLogStores } = require('~/cache');
 
@@ -178,15 +177,16 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
       // 1) Preprocess arguments with JSONPath placeholder evaluation
+      const conversationId =
+        config?.metadata?.thread_id || config?.configurable?.thread_id || req?.body?.thread_id || req?.body?.conversationId;
+      const runId = config?.metadata?.run_id || req?.body?.run_id;
       try {
-        const conversationId =
-          config?.metadata?.thread_id || config?.configurable?.thread_id || req?.body?.thread_id || req?.body?.conversationId;
-        if (!conversationId) {
+        if (!conversationId || !runId) {
           logger.warn(
-            `[MCP][User: ${userId}][${serverName}] Missing conversationId in tool config; JSONPath history will use empty context for "${toolName}"`,
+            `[MCP][User: ${userId}][${serverName}] Missing conversationId or runId in tool config; JSONPath history will use empty context for "${toolName}"`,
           );
         } else {
-          const r = await loadHistory(conversationId, req);
+          const r = await loadHistory(conversationId, runId);
           toolArguments = evaluatePlaceholders(toolArguments, { r });
         }
       } catch (preErr) {
@@ -195,7 +195,7 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         );
       }
 
-      const result = await mcpManager.callTool({
+      const results = await mcpManager.callTool({
         serverName,
         toolName,
         provider,
@@ -216,27 +216,20 @@ async function createMCPTool({ req, res, toolKey, provider: _provider }) {
         oauthEnd,
       });
 
-      // 1b) Add runtime entry for this tool result so subsequent steps see it
-      try {
-        const conversationId =
-          config?.metadata?.thread_id || config?.configurable?.thread_id || req?.body?.thread_id || req?.body?.conversationId;
-        if (conversationId) {
-          const entry = buildRuntimeEntry({ name: toolName, server: serverName, args: toolArguments, result });
-          addRuntimeEntry(req, conversationId, entry);
-        }
-      } catch (runtimeErr) {
-        logger.warn(
-          `[MCP][User: ${userId}][${serverName}] Failed to add runtime MCP JSONPath entry for "${toolName}": ${runtimeErr?.message}`,
-        );
+      // Normalize what we return for UI/agent consumption, but cache against raw results
+      let displayResult = results;
+      if (isAssistantsEndpoint(provider) && Array.isArray(results)) {
+        displayResult = results[0];
+      } else if (isGoogle && Array.isArray(results?.[0]) && results[0][0]?.type === ContentTypes.TEXT) {
+        displayResult = [results[0][0].text, results[1]];
       }
 
-      if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
-        return result[0];
+      // Cache only the primary content (first element) from the raw results if formatted
+      const toCache = Array.isArray(results) ? results[0] : results;
+      if (toCache && conversationId && runId) {
+        await addRuntimeCachedEntry(conversationId, runId, toCache);
       }
-      if (isGoogle && Array.isArray(result[0]) && result[0][0]?.type === ContentTypes.TEXT) {
-        return [result[0][0].text, result[1]];
-      }
-      return result;
+      return displayResult;
     } catch (error) {
       logger.error(
         `[MCP][User: ${userId}][${serverName}] Error calling "${toolName}" MCP tool:`,

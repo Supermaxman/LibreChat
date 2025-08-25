@@ -1226,6 +1226,10 @@ export enum CacheKeys {
    * Key for SAML session.
    */
   SAML_SESSION = 'SAML_SESSION',
+  /**
+   * Key for MCP JSONPath runtime entries (per conversation/run), 5-minute TTL
+   */
+  MCP_JSONPIPE_RUNTIME = 'MCP_JSONPIPE_RUNTIME',
 }
 
 /**

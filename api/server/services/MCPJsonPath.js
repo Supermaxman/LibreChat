@@ -1,7 +1,8 @@
 const { JSONPath } = require('jsonpath-plus');
 const { logger } = require('@librechat/data-schemas');
 const { getMessages } = require('~/models');
-const { ContentTypes } = require('librechat-data-provider');
+const { ContentTypes, CacheKeys } = require('librechat-data-provider');
+const getLogStores = require('~/cache/getLogStores');
 
 /**
  * @typedef {Object} REntry
@@ -10,6 +11,99 @@ const { ContentTypes } = require('librechat-data-provider');
  * @property {string} [messageId]
  * @property {string} [role]
  */
+
+/**
+ * Runtime cache key builder per conversation/run.
+ * @param {string} conversationId
+ * @param {string|undefined} runId
+ */
+function runtimeKey(conversationId, runId) {
+  return `${conversationId}:${runId ?? 'no-run'}`;
+}
+
+/**
+ * Add a runtime entry to cache (5m TTL via cache namespace).
+ * @param {string} conversationId
+ * @param {string|undefined} runId
+ * @param {REntry} entry
+ */
+async function addRuntimeCachedEntry(conversationId, runId, result) {
+  try {
+    logger.info(`[MCP-JSONPATH] Saving runtime cached entry: convo=${conversationId} run=${runId ?? 'none'} value:\n${JSON.stringify(result)}`);
+    const store = getLogStores(CacheKeys.MCP_JSONPIPE_RUNTIME);
+    const key = runtimeKey(conversationId, runId);
+    const existing = await store.get(key);
+    if (existing === undefined || !Array.isArray(existing)) {
+      logger.warn(`[MCP-JSONPATH] No runtime cached entry found for convo=${conversationId} run=${runId ?? 'none'}`);
+      return;
+    }
+
+    if (typeof result === 'string') {
+      // if the result is a string, we need to parse it as JSON then use that as the entry
+      const obj = tryParse(result);
+      const jsonEntries = parseToolCallOutput(obj);
+      existing.push(...jsonEntries);
+    } else if (Array.isArray(result)) {
+      // if the result is a list, pass it to parseToolCallOutput
+      // if the result is an object, we can use it directly as a tool call output and work with that
+      const jsonEntries = parseToolCallOutput(result);
+      existing.push(...jsonEntries);
+    } else if (result && typeof result === 'object' && result.content) {
+      // if the result is an object, first check if there's a "content" property
+      // if so, pass it to parseToolCallOutput
+      const jsonEntries = parseToolCallOutput(result.content);
+      existing.push(...jsonEntries);
+    } else {
+      // otherwise, pass directly to parseToolCallOutput
+      const jsonEntries = parseToolCallOutput(result);
+      existing.push(...jsonEntries);
+    }
+
+    await store.set(key, existing);
+    logger.info(
+      `[MCP-JSONPATH] Added runtime cached entry: convo=${conversationId} run=${runId ?? 'none'} now=${(existing?.length) ?? 1}`,
+    );
+  } catch (err) {
+    logger.warn(`[MCP-JSONPATH] Failed to cache runtime entry: ${err?.message}`);
+  }
+}
+
+async function setRuntimeCachedEntry(conversationId, runId, entries) {
+  try {
+    const store = getLogStores(CacheKeys.MCP_JSONPIPE_RUNTIME);
+    const key = runtimeKey(conversationId, runId);
+    await store.set(key, entries);
+    logger.info(
+      `[MCP-JSONPATH] Set runtime cached entry: convo=${conversationId} run=${runId ?? 'none'} now=${entries.length}`,
+    );
+  } catch (err) {
+    logger.warn(`[MCP-JSONPATH] Failed to set runtime cached entry: ${err?.message}`);
+  }
+}
+
+/**
+ * Get runtime cached entries for a conversation/run.
+ * @param {string} conversationId
+ * @param {string|undefined} runId
+ * @returns {Promise<REntry[]|undefined>}
+ */
+async function getRuntimeCachedEntries(conversationId, runId) {
+  try {
+    const store = getLogStores(CacheKeys.MCP_JSONPIPE_RUNTIME);
+    const key = runtimeKey(conversationId, runId);
+    const arr = await store.get(key);
+    if (Array.isArray(arr)) {
+      logger.info(
+        `[MCP-JSONPATH] Loaded runtime cached entries: convo=${conversationId} run=${runId ?? 'none'} count=${arr.length}`,
+      );
+      return arr;
+    }
+    return undefined;
+  } catch (err) {
+    logger.warn(`[MCP-JSONPATH] Failed to load runtime cached entries: ${err?.message}`);
+    return undefined;
+  }
+}
 
 /**
  * Extract JSON objects from fenced code blocks within a string.
@@ -49,6 +143,34 @@ function tryParse(s) {
   }
 }
 
+
+function parseToolCallOutput(obj) {
+  const jsonEntries = [];
+  if (obj) {
+    // if the tool output is a list of objects, we need to check if any of the objects have a type of "text"
+    // if so, we need to parse the text as JSON
+    // if not, we can add the object to the entries
+    if (Array.isArray(obj)) {
+      let foundParts = false;
+      for (const item of obj) {
+        if (item && typeof item === 'object' && !Array.isArray(item) && item.type === "text") {
+          const inner = tryParse(item.text);
+          if (inner) {
+            jsonEntries.push(inner);
+            foundParts = true;
+          }
+        }
+      }
+      if (!foundParts) {
+        jsonEntries.push(obj);
+      }
+    } else {
+      jsonEntries.push(obj);
+    }
+  }
+  return jsonEntries;
+}
+
 /**
  * Only include:
  * 1) TOOL_CALL outputs: message.content has an entry with type=tool_call. We expect a "function.output" or similar string that contains JSON. Parse it; if that JSON contains a list of text parts, attempt second-level JSON parse of each .text as needed.
@@ -86,62 +208,24 @@ function buildEntriesFromMessages(messages) {
         const bodyOutput = toolCall?.output; // fallback
         const outputString = typeof functionOutput === 'string' ? functionOutput : typeof bodyOutput === 'string' ? bodyOutput : null;
         if (!outputString) {
-          logger.info(`[MCP-JSONPATH] TOOL_CALL found but output not string; msgIdx=${idx} id=${messageId}`);
           continue;
         }
-
-        // First-level parse of the tool output
         const obj = tryParse(outputString);
-        if (obj) {
-          // if the tool output is a list of objects, we need to check if any of the objects have a type of "text"
-          // if so, we need to parse the text as JSON
-          // if not, we can add the object to the entries
-          if (Array.isArray(obj)) {
-            let foundParts = false;
-            for (const item of obj) {
-              if (item && typeof item === 'object' && !Array.isArray(item)) {
-                if (item.type === "text") {
-                  const inner = tryParse(item.text);
-                  if (inner) {
-                    entries.push({ json: inner, time, messageId, role });
-                    addedCount++;
-                    foundParts = true;
-                    logger.info(
-                      `[MCP-JSONPATH] ++ TOOL_CALL inner text JSON added: msgIdx=${idx} id=${messageId} keys=${Object.keys(inner).slice(0, 20).join(',')}`,
-                    );
-                  }
-                }
-              }
-            }
-            if (!foundParts) {
-              entries.push({ json: obj, time, messageId, role });
-              addedCount++;
-              logger.info(
-                `[MCP-JSONPATH] ++ TOOL_CALL object LIST JSON added: msgIdx=${idx} id=${messageId} keys=${Object.keys(obj).slice(0, 20).join(',')}`,
-              );
-            }
-          } else {
-            entries.push({ json: obj, time, messageId, role });
-            addedCount++;
-            logger.info(
-              `[MCP-JSONPATH] ++ TOOL_CALL object JSON added: msgIdx=${idx} id=${messageId} keys=${Object.keys(obj).slice(0, 20).join(',')}`,
-            );
-          }
+        const jsonEntries = parseToolCallOutput(obj);
+        for (const entry of jsonEntries) {
+          entries.push(entry);
+          addedCount++;
         }
       }
     }
-
 
     // 2) Fenced json blocks in message.text
     if (typeof msg?.text === 'string' && msg.text) {
       const blocks = extractJsonCodeBlocks(msg.text);
       for (let b = 0; b < blocks.length; b++) {
         const obj = blocks[b];
-        entries.push({ json: obj, time, messageId, role });
+        entries.push(obj);
         addedCount++;
-        logger.info(
-          `[MCP-JSONPATH] + CODEBLOCK message.text JSON added: msgIdx=${idx} id=${messageId} #${b} keys=${Object.keys(obj).slice(0, 20).join(',')}`,
-        );
       }
     }
 
@@ -155,11 +239,8 @@ function buildEntriesFromMessages(messages) {
         const blocks = extractJsonCodeBlocks(part.text);
         for (let b = 0; b < blocks.length; b++) {
           const obj = blocks[b];
-          entries.push({ json: obj, time, messageId, role });
+          entries.push(obj);
           addedCount++;
-          logger.info(
-            `[MCP-JSONPATH] + CODEBLOCK content text JSON added: msgIdx=${idx} id=${messageId} part=${p} #${b} keys=${Object.keys(obj).slice(0, 20).join(',')}`,
-          );
         }
       }
     }
@@ -172,22 +253,24 @@ function buildEntriesFromMessages(messages) {
   return entries;
 }
 
-/**
- * Load prior tool call results from persistent storage only (no cache merge), preserving order.
- * @param {string} conversationId
- * @returns {Promise<REntry[]>}
- */
-async function loadHistory(conversationId) {
+async function loadHistory(conversationId, runId) {
   try {
-    const persistedMessages = (await getMessages({ conversationId })) || [];
-    const persistentEntries = buildEntriesFromMessages(persistedMessages);
+    // get the runtime entries from the cache
+    let runtimeEntries = await getRuntimeCachedEntries(conversationId, runId);
+    // if none in cache, build from persisted messages
+    if (runtimeEntries === undefined) {
+      const persistedMessages = (await getMessages({ conversationId })) || [];
+      const persistentEntries = buildEntriesFromMessages(persistedMessages);
+      await setRuntimeCachedEntry(conversationId, runId, persistentEntries);
+      runtimeEntries = persistentEntries;
+    }
     logger.info(
-      `[MCP-JSONPATH] Loaded history (persistent only) for thread=${conversationId} | jsonEntries=${persistentEntries.length}`,
+      `[MCP-JSONPATH] Loaded history for thread=${conversationId} run=${runId ?? 'none'} | runtime=${runtimeEntries.length}`,
     );
-    return persistentEntries;
+    return runtimeEntries;
   } catch (err) {
     logger.warn(
-      `[MCP-JSONPATH] Failed to load persistent history for thread=${conversationId}: ${err?.message}`,
+      `[MCP-JSONPATH] Failed to load history for thread=${conversationId} run=${runId ?? 'none'}: ${err?.message}`,
     );
     return [];
   }
@@ -200,12 +283,11 @@ async function loadHistory(conversationId) {
  */
 function buildJsonRoot(entries) {
   const arr = Array.isArray(entries) ? entries : [];
-  const jsons = arr.map((e) => e.json);
-  logger.info(`[MCP-JSONPATH] Built JSON root array with length=${jsons.length}`);
+  logger.info(`[MCP-JSONPATH] Built JSON root array with length=${arr.length}`);
   try {
-    logger.info(`[MCP-JSONPATH] Context JSON dump: ${JSON.stringify(jsons)}`);
+    logger.info(`[MCP-JSONPATH] Context JSON dump: ${JSON.stringify(arr)}`);
   } catch (_) {}
-  return jsons;
+  return arr;
 }
 
 /**
@@ -306,6 +388,8 @@ function safeEval(jsonPath, jsonRoot) {
 module.exports = {
   loadHistory,
   evaluatePlaceholders,
+  addRuntimeCachedEntry,
+  setRuntimeCachedEntry,
 };
 
 
