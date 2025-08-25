@@ -200,11 +200,12 @@ async function loadHistory(conversationId) {
  */
 function buildJsonRoot(entries) {
   const arr = Array.isArray(entries) ? entries : [];
-  logger.info(`[MCP-JSONPATH] Built JSON root array with length=${arr.length}`);
+  const jsons = arr.map((e) => e.json);
+  logger.info(`[MCP-JSONPATH] Built JSON root array with length=${jsons.length}`);
   try {
-    logger.info(`[MCP-JSONPATH] Context JSON dump: ${JSON.stringify(arr)}`);
+    logger.info(`[MCP-JSONPATH] Context JSON dump: ${JSON.stringify(jsons)}`);
   } catch (_) {}
-  return arr;
+  return jsons;
 }
 
 /**
