@@ -64,6 +64,9 @@ function buildEntriesFromMessages(messages) {
     let included = false;
     let parsedTextJson = false;
     let codeBlockCount = 0;
+    let contentCount = 0;
+
+    logger.info(`[MCP-JSONPATH] Building entries from message idx=${idx} id=${messageId} role=${role}:\n${JSON.stringify(msg)}`);
 
     // 1) Whole-message or aggregated text JSON
     let text = '';
@@ -87,10 +90,9 @@ function buildEntriesFromMessages(messages) {
           );
         } catch (_) {}
       }
-    }
-
-    // 2) Explicit JSON code blocks from message.text
-    if (typeof msg?.text === 'string' && msg.text) {
+    } 
+    if (!included && typeof msg?.text === 'string' && msg.text) {
+      // 2) Explicit JSON code blocks from message.text
       const blocks = extractJsonCodeBlocks(msg.text);
       codeBlockCount += blocks.length;
       for (let b = 0; b < blocks.length; b++) {
@@ -103,10 +105,9 @@ function buildEntriesFromMessages(messages) {
           );
         } catch (_) {}
       }
-    }
-
+    } 
+    if (!included && Array.isArray(msg?.content) && msg.content.length) {
     // 3) Explicit JSON code blocks from each content text part (in order)
-    if (Array.isArray(msg?.content) && msg.content.length) {
       for (let p = 0; p < msg.content.length; p++) {
         const part = msg.content[p];
         if (!part || part.type !== 'text' || typeof part.text !== 'string') {
@@ -124,12 +125,27 @@ function buildEntriesFromMessages(messages) {
             );
           } catch (_) {}
         }
+        if (blocks.length === 0) {
+          // try to parse the text as JSON
+          const parsed = tryParseJson(part.text);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            entries.push({ text: part.text, json: parsed, time, messageId, role });
+            included = true;
+            contentCount++;
+            try {
+              logger.info(
+                `[MCP-JSONPATH] + Persisted message idx=${idx} id=${messageId} role=${role} -> added content-block text part=${p} keys=${Object.keys(parsed).slice(0, 20).join(',')}`,
+              );
+            } catch (_) {}
+          }
+        }
       }
     }
 
+
     if (!included) {
       logger.info(
-        `[MCP-JSONPATH] - Skipped message idx=${idx} id=${messageId} role=${role} (no valid JSON found; codeBlocks=${codeBlockCount}, parsedText=${parsedTextJson})`,
+        `[MCP-JSONPATH] - Skipped message idx=${idx} id=${messageId} role=${role} (no valid JSON found; codeBlocks=${codeBlockCount}, parsedText=${parsedTextJson}, contentCount=${contentCount})`,
       );
     }
   }
@@ -213,7 +229,7 @@ function evaluatePlaceholders(value, context) {
 
 /**
  * Internal helper: Evaluate placeholders ${{ ... }} with a precomputed jsonRoot.
- * - Single-whole-string placeholder preserves type.
+ * - Single-whole-string placeholder preserves type (native substitution). This allows numbers/objects/arrays/booleans/null to be inserted without quotes.
  * - Mixed text interpolates with stringified non-strings.
  * - Escapes: \${{ -> literal ${ {, \$ -> literal $.
  * @param {unknown} value
@@ -235,14 +251,14 @@ function evaluatePlaceholdersWithRoot(value, jsonRoot) {
     if (onlyOne) {
       const expr = normalizeExpr(onlyOne[1]);
       const result = safeEval(expr, jsonRoot);
-      logger.info(`[MCP-JSONPATH] Evaluated placeholder (single) expr="${expr}" -> type=${typeof result}`);
+      logger.info(`[MCP-JSONPATH] Evaluated placeholder (single/native) expr="${expr}" -> type=${typeof result}\n${JSON.stringify(result)}`);
       return result;
     }
 
     input = input.replace(placeholderRegex, (_, rawExpr) => {
       const expr = normalizeExpr(rawExpr);
       const result = safeEval(expr, jsonRoot);
-      logger.info(`[MCP-JSONPATH] Evaluated placeholder expr="${expr}" -> type=${typeof result}`);
+      logger.info(`[MCP-JSONPATH] Evaluated placeholder expr="${expr}" -> type=${typeof result}\n${JSON.stringify(result)}`);
       if (result == null) {
         return '';
       }
