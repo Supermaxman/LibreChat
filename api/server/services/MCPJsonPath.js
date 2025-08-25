@@ -1,14 +1,10 @@
 const { JSONPath } = require('jsonpath-plus');
 const { logger } = require('@librechat/data-schemas');
 const { getMessages } = require('~/models');
+const { ContentTypes } = require('librechat-data-provider');
 
 /**
  * @typedef {Object} REntry
- * @property {string} [name]
- * @property {string} [server]
- * @property {unknown} [args]
- * @property {string} [text]
- * @property {unknown} [artifact]
  * @property {Record<string, unknown>} [json]
  * @property {number} [time]
  * @property {string} [messageId]
@@ -35,18 +31,31 @@ function extractJsonCodeBlocks(s) {
       if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
         blocks.push(obj);
       }
-    } catch (_) {
-      // ignore invalid block
-    }
+    } catch (_) {}
   }
   return blocks;
 }
 
 /**
- * Build entries from persisted conversation messages.
- * Extracts text and attempts to parse JSON for later JSONPath queries.
- * Also includes explicit ```json ... ``` fenced blocks from user/assistant messages.
- * Preserves message order and code-block order.
+ * Safe JSON.parse for strings.
+ * @param {string} s
+ */
+function tryParse(s) {
+  try {
+    const v = JSON.parse(s);
+    return v;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Only include:
+ * 1) TOOL_CALL outputs: message.content has an entry with type=tool_call. We expect a "function.output" or similar string that contains JSON. Parse it; if that JSON contains a list of text parts, attempt second-level JSON parse of each .text as needed.
+ * 2) Fenced ```json ... ``` blocks: parse their contents.
+ * Everything else is ignored.
+ *
+ * Logs each inclusion and reasons for skips.
  * @param {Array} messages
  * @returns {REntry[]}
  */
@@ -55,100 +64,111 @@ function buildEntriesFromMessages(messages) {
     return [];
   }
   const entries = [];
+
   for (let idx = 0; idx < messages.length; idx++) {
     const msg = messages[idx];
     const time = new Date(msg.createdAt || Date.now()).getTime();
     const messageId = msg.messageId;
     const role = msg.sender;
 
-    let included = false;
-    let parsedTextJson = false;
-    let codeBlockCount = 0;
-    let contentCount = 0;
+    let addedCount = 0;
 
-    logger.info(`[MCP-JSONPATH] Building entries from message idx=${idx} id=${messageId} role=${role}:\n${JSON.stringify(msg)}`);
-
-    // 1) Whole-message or aggregated text JSON
-    let text = '';
-    if (typeof msg?.text === 'string' && msg.text.trim()) {
-      text = msg.text;
-    } else if (Array.isArray(msg?.content) && msg.content.length) {
-      const parts = msg.content.filter((p) => p && p.type === 'text').map((p) => p.text);
-      if (parts.length) {
-        text = parts.join('\n\n');
-      }
-    }
-    if (text) {
-      const parsed = tryParseJson(text);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        entries.push({ text, json: parsed, time, messageId, role });
-        included = true;
-        parsedTextJson = true;
-        try {
-          logger.info(
-            `[MCP-JSONPATH] + Persisted message idx=${idx} id=${messageId} role=${role} -> added text JSON with keys=${Object.keys(parsed).slice(0, 20).join(',')}`,
-          );
-        } catch (_) {}
-      }
-    } 
-    if (!included && typeof msg?.text === 'string' && msg.text) {
-      // 2) Explicit JSON code blocks from message.text
-      const blocks = extractJsonCodeBlocks(msg.text);
-      codeBlockCount += blocks.length;
-      for (let b = 0; b < blocks.length; b++) {
-        const obj = blocks[b];
-        entries.push({ text: '```json\n...\n```', json: obj, time, messageId, role });
-        included = true;
-        try {
-          logger.info(
-            `[MCP-JSONPATH] + Persisted message idx=${idx} id=${messageId} role=${role} -> added code-block JSON #${b} keys=${Object.keys(obj).slice(0, 20).join(',')}`,
-          );
-        } catch (_) {}
-      }
-    } 
-    if (!included && Array.isArray(msg?.content) && msg.content.length) {
-    // 3) Explicit JSON code blocks from each content text part (in order)
-      for (let p = 0; p < msg.content.length; p++) {
-        const part = msg.content[p];
-        if (!part || part.type !== 'text' || typeof part.text !== 'string') {
+    // 1) TOOL_CALL outputs
+    if (Array.isArray(msg?.content)) {
+      for (const part of msg.content) {
+        const toolCall = part && (part[ContentTypes.TOOL_CALL] || (part.type === ContentTypes.TOOL_CALL && part));
+        if (!toolCall) {
           continue;
         }
-        const blocks = extractJsonCodeBlocks(part.text);
-        codeBlockCount += blocks.length;
-        for (let b = 0; b < blocks.length; b++) {
-          const obj = blocks[b];
-          entries.push({ text: '```json\n...\n```', json: obj, time, messageId, role });
-          included = true;
-          try {
-            logger.info(
-              `[MCP-JSONPATH] + Persisted message idx=${idx} id=${messageId} role=${role} -> added content-block JSON part=${p} #${b} keys=${Object.keys(obj).slice(0, 20).join(',')}`,
-            );
-          } catch (_) {}
+
+        // Try common shapes for function output/body
+        const functionOutput = toolCall?.function?.output;
+        const bodyOutput = toolCall?.output; // fallback
+        const outputString = typeof functionOutput === 'string' ? functionOutput : typeof bodyOutput === 'string' ? bodyOutput : null;
+        if (!outputString) {
+          logger.info(`[MCP-JSONPATH] TOOL_CALL found but output not string; msgIdx=${idx} id=${messageId}`);
+          continue;
         }
-        if (blocks.length === 0) {
-          // try to parse the text as JSON
-          const parsed = tryParseJson(part.text);
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            entries.push({ text: part.text, json: parsed, time, messageId, role });
-            included = true;
-            contentCount++;
-            try {
+
+        // First-level parse of the tool output
+        const obj = tryParse(outputString);
+        if (obj) {
+          // if the tool output is a list of objects, we need to check if any of the objects have a type of "text"
+          // if so, we need to parse the text as JSON
+          // if not, we can add the object to the entries
+          if (Array.isArray(obj)) {
+            let foundParts = false;
+            for (const item of obj) {
+              if (item && typeof item === 'object' && !Array.isArray(item)) {
+                if (item.type === "text") {
+                  const inner = tryParse(item.text);
+                  if (inner) {
+                    entries.push({ json: inner, time, messageId, role });
+                    addedCount++;
+                    foundParts = true;
+                    logger.info(
+                      `[MCP-JSONPATH] ++ TOOL_CALL inner text JSON added: msgIdx=${idx} id=${messageId} keys=${Object.keys(inner).slice(0, 20).join(',')}`,
+                    );
+                  }
+                }
+              }
+            }
+            if (!foundParts) {
+              entries.push({ json: obj, time, messageId, role });
+              addedCount++;
               logger.info(
-                `[MCP-JSONPATH] + Persisted message idx=${idx} id=${messageId} role=${role} -> added content-block text part=${p} keys=${Object.keys(parsed).slice(0, 20).join(',')}`,
+                `[MCP-JSONPATH] ++ TOOL_CALL object LIST JSON added: msgIdx=${idx} id=${messageId} keys=${Object.keys(obj).slice(0, 20).join(',')}`,
               );
-            } catch (_) {}
+            }
+          } else {
+            entries.push({ json: obj, time, messageId, role });
+            addedCount++;
+            logger.info(
+              `[MCP-JSONPATH] ++ TOOL_CALL object JSON added: msgIdx=${idx} id=${messageId} keys=${Object.keys(obj).slice(0, 20).join(',')}`,
+            );
           }
         }
       }
     }
 
 
-    if (!included) {
-      logger.info(
-        `[MCP-JSONPATH] - Skipped message idx=${idx} id=${messageId} role=${role} (no valid JSON found; codeBlocks=${codeBlockCount}, parsedText=${parsedTextJson}, contentCount=${contentCount})`,
-      );
+    // 2) Fenced json blocks in message.text
+    if (typeof msg?.text === 'string' && msg.text) {
+      const blocks = extractJsonCodeBlocks(msg.text);
+      for (let b = 0; b < blocks.length; b++) {
+        const obj = blocks[b];
+        entries.push({ json: obj, time, messageId, role });
+        addedCount++;
+        logger.info(
+          `[MCP-JSONPATH] + CODEBLOCK message.text JSON added: msgIdx=${idx} id=${messageId} #${b} keys=${Object.keys(obj).slice(0, 20).join(',')}`,
+        );
+      }
+    }
+
+    // 2b) Fenced json blocks in any content text parts
+    if (Array.isArray(msg?.content)) {
+      for (let p = 0; p < msg.content.length; p++) {
+        const part = msg.content[p];
+        if (!part || part.type !== 'text' || typeof part.text !== 'string') {
+          continue;
+        }
+        const blocks = extractJsonCodeBlocks(part.text);
+        for (let b = 0; b < blocks.length; b++) {
+          const obj = blocks[b];
+          entries.push({ json: obj, time, messageId, role });
+          addedCount++;
+          logger.info(
+            `[MCP-JSONPATH] + CODEBLOCK content text JSON added: msgIdx=${idx} id=${messageId} part=${p} #${b} keys=${Object.keys(obj).slice(0, 20).join(',')}`,
+          );
+        }
+      }
+    }
+
+    if (addedCount === 0) {
+      logger.info(`[MCP-JSONPATH] - Skipped message idx=${idx} id=${messageId} role=${role} (no explicit JSON sources)`);
     }
   }
+
   return entries;
 }
 
@@ -172,31 +192,6 @@ async function loadHistory(conversationId) {
     );
     return [];
   }
-}
-
-/**
- * Best-effort JSON parse helper for message/tool text.
- * @param {string} text
- * @returns {unknown|null}
- */
-function tryParseJson(text) {
-  if (typeof text !== 'string' || !text) {
-    return null;
-  }
-  try {
-    return JSON.parse(text);
-  } catch (_) {}
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start !== -1 && end > start) {
-    const candidate = text.slice(start, end + 1);
-    try {
-      return JSON.parse(candidate);
-    } catch (_) {
-      return null;
-    }
-  }
-  return null;
 }
 
 /**
@@ -287,30 +282,17 @@ function evaluatePlaceholdersWithRoot(value, jsonRoot) {
   return value;
 }
 
-/**
- * Normalize expressions so bare identifiers become JSONPath rooted to `$` (array).
- * Accepts:
- *   $[-1].id
- *   [-1].id   (will be normalized to $[-1].id)
- * @param {string} expr
- */
 function normalizeExpr(expr) {
   const stripped = String(expr).trim();
   if (!stripped.startsWith('$')) {
     if (stripped.startsWith('[')) {
       return `$${stripped}`;
     }
-    // default to array-root without dot
     return `$${stripped}`;
   }
   return stripped;
 }
 
-/**
- * Safely evaluate JSONPath against an array root. Unwrap singleton arrays.
- * @param {string} jsonPath
- * @param {Array<object>} jsonRoot
- */
 function safeEval(jsonPath, jsonRoot) {
   try {
     const res = JSONPath({ path: jsonPath, json: jsonRoot, wrap: true });
