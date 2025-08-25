@@ -181,9 +181,8 @@ async function loadHistory(conversationId) {
   try {
     const persistedMessages = (await getMessages({ conversationId })) || [];
     const persistentEntries = buildEntriesFromMessages(persistedMessages);
-    const jsonCount = persistentEntries.filter((e) => e && e.json && typeof e.json === 'object' && !Array.isArray(e.json)).length;
     logger.info(
-      `[MCP-JSONPATH] Loaded history (persistent only) for thread=${conversationId} | jsonEntries=${jsonCount}, total=${persistentEntries.length}`,
+      `[MCP-JSONPATH] Loaded history (persistent only) for thread=${conversationId} | jsonEntries=${persistentEntries.length}`,
     );
     return persistentEntries;
   } catch (err) {
@@ -201,14 +200,11 @@ async function loadHistory(conversationId) {
  */
 function buildJsonRoot(entries) {
   const arr = Array.isArray(entries) ? entries : [];
-  const jsons = arr
-    .map((e) => (e && e.json && typeof e.json === 'object' && !Array.isArray(e.json) ? e.json : null))
-    .filter(Boolean);
-  logger.info(`[MCP-JSONPATH] Built JSON root array with length=${jsons.length}`);
+  logger.info(`[MCP-JSONPATH] Built JSON root array with length=${arr.length}`);
   try {
-    logger.info(`[MCP-JSONPATH] Context JSON dump: ${JSON.stringify(jsons)}`);
+    logger.info(`[MCP-JSONPATH] Context JSON dump: ${JSON.stringify(arr)}`);
   } catch (_) {}
-  return jsons;
+  return arr;
 }
 
 /**
